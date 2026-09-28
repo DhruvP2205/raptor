@@ -17,6 +17,14 @@ interface ConfirmDialogProps {
    * destructive actions the backend itself never asks a reason for
    * (team kick/delete — see docs/design/04-team-management.md). */
   requireReason?: boolean;
+  /** Extra fields specific to one call site (e.g. Module 7's transfer
+   * modal needs a receiving-judge picker alongside the reason) —
+   * rendered between the description and the reason field, never a
+   * second disconnected floating panel. */
+  children?: React.ReactNode;
+  /** Additional confirm-button gate beyond the reason requirement —
+   * e.g. "a receiving judge has been picked." Defaults to always-true. */
+  extraValid?: boolean;
   onConfirm: (reason?: string) => void;
   onCancel: () => void;
 }
@@ -34,6 +42,8 @@ export function ConfirmDialog({
   danger = true,
   loading,
   requireReason = false,
+  children,
+  extraValid = true,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -56,7 +66,7 @@ export function ConfirmDialog({
   }, [open, onCancel]);
 
   if (!open) return null;
-  const reasonSatisfied = !requireReason || reason.trim().length > 0;
+  const canConfirm = (!requireReason || reason.trim().length > 0) && extraValid;
 
   return (
     <div
@@ -76,6 +86,7 @@ export function ConfirmDialog({
           {title}
         </h2>
         <p className="mt-2 text-sm text-ink-muted">{description}</p>
+        {children}
         {requireReason && (
           <div className="mt-4">
             <label htmlFor="confirm-dialog-reason" className="text-sm font-medium text-ink">
@@ -99,7 +110,7 @@ export function ConfirmDialog({
             size="sm"
             onClick={() => onConfirm(requireReason ? reason.trim() : undefined)}
             loading={loading}
-            disabled={!reasonSatisfied}
+            disabled={!canConfirm}
           >
             {confirmLabel}
           </Button>

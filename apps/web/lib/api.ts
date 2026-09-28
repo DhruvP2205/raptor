@@ -1,7 +1,11 @@
 import type {
+  AssignableSubmission,
   DraftInProgressSummary,
   InvitationPreview,
+  JudgeAssignmentRow,
   JudgeInvitation,
+  JudgeProgress,
+  MyAssignmentRow,
   PublicEvent,
   PublicEventMembership,
   PublicUser,
@@ -11,6 +15,12 @@ import type {
   TeamWithMembers,
   Track,
   Prize,
+  JudgeCalibrationProfile,
+  NormalizationRunDetail,
+  NormalizationRunSummary,
+  RubricCriterion,
+  RubricCriterionKind,
+  ScoringData,
   VerificationRow,
   ApiErrorBody,
 } from '@raptor/shared';
@@ -308,6 +318,19 @@ export function resendJudgeInvitation(eventId: string, membershipId: string) {
   });
 }
 
+// Module 7's "raise this judge's limit" action (design/07-judge-assignment.md
+// Section 2 States) — sets EventMembership.projectLimitOverride.
+export function updateJudgeMembership(
+  eventId: string,
+  membershipId: string,
+  input: Partial<{ trackIds: string[]; projectLimitOverride: number | null }>,
+) {
+  return apiFetch<PublicEventMembership>(`/events/${eventId}/judges/${membershipId}`, {
+    method: 'PATCH',
+    body: input,
+  });
+}
+
 export function previewInvitation(token: string) {
   return apiFetch<InvitationPreview>(`/invitations/preview?token=${encodeURIComponent(token)}`);
 }
@@ -394,4 +417,97 @@ export function submitSubmission(id: string) {
 
 export function unsubmitSubmission(id: string) {
   return apiFetch<Submission>(`/submissions/${id}/unsubmit`, { method: 'POST' });
+}
+
+// --- Judge Assignment (Module 7) ---
+
+export function listAssignableSubmissions(eventId: string) {
+  return apiFetch<AssignableSubmission[]>(`/events/${eventId}/assignments/assignable-submissions`);
+}
+
+export function listAssignments(eventId: string) {
+  return apiFetch<JudgeAssignmentRow[]>(`/events/${eventId}/assignments`);
+}
+
+export function listMyAssignments(eventId: string) {
+  return apiFetch<MyAssignmentRow[]>(`/events/${eventId}/assignments/mine`);
+}
+
+export function assignmentProgress(eventId: string) {
+  return apiFetch<JudgeProgress[]>(`/events/${eventId}/assignments/progress`);
+}
+
+export function manualAssign(eventId: string, submissionId: string, judgeIds: string[]) {
+  return apiFetch<JudgeAssignmentRow[]>(`/events/${eventId}/assignments`, {
+    method: 'POST',
+    body: { submissionId, judgeIds },
+  });
+}
+
+export function autoAssign(eventId: string, input: { reviewsPerProject: number; strategy: 'BY_TRACK' | 'RANDOM' }) {
+  return apiFetch<{ created: number; shortfalls: Array<{ submissionId: string; assigned: number; needed: number }> }>(
+    `/events/${eventId}/assignments/auto-assign`,
+    { method: 'POST', body: input },
+  );
+}
+
+export function transferAssignment(eventId: string, assignmentId: string, toJudgeId: string, remark: string) {
+  return apiFetch<JudgeAssignmentRow>(`/events/${eventId}/assignments/${assignmentId}/transfer`, {
+    method: 'POST',
+    body: { toJudgeId, remark },
+  });
+}
+
+// --- Rubric & Scoring (Module 8) ---
+
+export function replaceRubric(
+  eventId: string,
+  input: {
+    criteria: Array<{
+      kind: RubricCriterionKind;
+      label: string;
+      description: string;
+      weightPercent?: number;
+      maxPoints?: number;
+    }>;
+    acknowledgeBonusOverage?: boolean;
+  },
+) {
+  return apiFetch<RubricCriterion[]>(`/events/${eventId}/rubric-criteria`, {
+    method: 'PUT',
+    body: input,
+  });
+}
+
+export function getForScoring(assignmentId: string) {
+  return apiFetch<ScoringData>(`/assignments/${assignmentId}`);
+}
+
+export function saveScoreDraft(
+  assignmentId: string,
+  input: { scores?: Array<{ criterionId: string; value: number; note?: string }>; overallFeedback?: string },
+) {
+  return apiFetch<ScoringData>(`/assignments/${assignmentId}/scores`, { method: 'PATCH', body: input });
+}
+
+export function submitReview(assignmentId: string) {
+  return apiFetch<ScoringData>(`/assignments/${assignmentId}/submit-review`, { method: 'POST' });
+}
+
+// --- Normalization (Module 9) ---
+
+export function listNormalizationRuns(eventId: string) {
+  return apiFetch<NormalizationRunSummary[]>(`/events/${eventId}/normalization-runs`);
+}
+
+export function triggerNormalizationRun(eventId: string) {
+  return apiFetch<NormalizationRunDetail>(`/events/${eventId}/normalization-runs`, { method: 'POST' });
+}
+
+export function getNormalizationRunDetail(eventId: string, runId: string) {
+  return apiFetch<NormalizationRunDetail>(`/events/${eventId}/normalization-runs/${runId}`);
+}
+
+export function getJudgeCalibrationProfile(userId: string) {
+  return apiFetch<JudgeCalibrationProfile>(`/admin/judges/${userId}/calibration`);
 }

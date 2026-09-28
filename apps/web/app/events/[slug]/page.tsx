@@ -186,14 +186,15 @@ export default function EventDetailPage() {
               exist before). Optimistic, same as the Organizer case
               above: shown for any judge account rather than gated on a
               real per-event membership check (no cheap way to make one
-              yet). No link into "My assigned projects" since Module 7
-              isn't built. */}
+              yet) — now links into Module 7's real assignments page. */}
           {user && user.accountType === 'JUDGE' && (
             <>
               <p className="text-sm font-medium text-ink">You&apos;re judging this event.</p>
-              <p className="text-xs text-ink-muted">
-                Assigned submissions will appear here once judging opens.
-              </p>
+              <Link href={`/events/${slug}/assignments/mine`}>
+                <Button fullWidth size="sm" variant="secondary">
+                  My assigned projects
+                </Button>
+              </Link>
             </>
           )}
         </Card>

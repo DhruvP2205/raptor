@@ -357,11 +357,31 @@ export class AssignmentsService {
   // any row in this table — a judge only ever sees their own queue,
   // never other judges' assignments or identities.
   async listMine(eventId: string, judgeUserId: string) {
-    return this.prisma.judgeAssignment.findMany({
+    // design/07-judge-assignment.md Section 3 — the list needs track
+    // names (submission.trackIds, resolved against the event's tracks
+    // client-side, same pattern as the public gallery) and enough of
+    // `verification` to detect the rare "disqualified after assignment"
+    // case ("No longer eligible" badge instead of the normal status).
+    const rows = await this.prisma.judgeAssignment.findMany({
       where: { eventId, judgeId: judgeUserId },
-      include: { submission: { select: { id: true, title: true } } },
+      include: {
+        submission: {
+          select: { id: true, title: true, trackIds: true, verification: { select: { finalDecision: true } } },
+        },
+      },
       orderBy: { assignedAt: 'asc' },
     });
+    return rows.map((r) => ({
+      ...r,
+      submission: r.submission
+        ? {
+            id: r.submission.id,
+            title: r.submission.title,
+            trackIds: r.submission.trackIds,
+            disqualified: r.submission.verification?.finalDecision === 'DISQUALIFIED',
+          }
+        : null,
+    }));
   }
 
   // Section 6, docs/stages/07-judge-assignment.md's sibling module —

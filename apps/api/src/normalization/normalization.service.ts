@@ -171,14 +171,62 @@ export class NormalizationService {
     const run = await this.prisma.normalizationRun.findUnique({
       where: { id: runId },
       include: {
-        judgeScores: true,
-        normalizedScores: { orderBy: { rank: 'asc' } },
+        // Judge identity wasn't joined at all before — the per-judge
+        // calibration panel (design/09-normalization.md Section 1) needs
+        // a name to show against each row, not just a judgeAssignmentId.
+        judgeScores: {
+          include: { judgeAssignment: { select: { judgeId: true, submissionId: true, judge: { select: { displayName: true } } } } },
+        },
+        normalizedScores: {
+          orderBy: { rank: 'asc' },
+          include: { submission: { select: { title: true } } },
+        },
       },
     });
     if (!run || run.eventId !== eventId) {
       throw new NotFoundException({ code: 'NORMALIZATION_RUN_NOT_FOUND', message: 'No such normalization run on this event.' });
     }
-    return run;
+
+    // The doc's core "Normalization Proof" table (raw vs. normalized vs.
+    // rank movement — directly the brief's own bonus requirement) needs
+    // a per-submission *raw* average and a raw-only ranking to diff
+    // against the normalized one. Neither was computed or stored
+    // anywhere — NormalizedJudgeScore.rawTotal lives per judge
+    // assignment, not per submission. Derived here, read-only, from
+    // data this run already persisted; never written back.
+    const rawTotalsBySubmission = new Map<string, number[]>();
+    for (const js of run.judgeScores) {
+      const submissionId = js.judgeAssignment.submissionId;
+      const list = rawTotalsBySubmission.get(submissionId) ?? [];
+      list.push(js.rawTotal);
+      rawTotalsBySubmission.set(submissionId, list);
+    }
+    const averageRawBySubmission = new Map<string, number>();
+    for (const [submissionId, totals] of rawTotalsBySubmission) {
+      averageRawBySubmission.set(submissionId, totals.reduce((s, v) => s + v, 0) / totals.length);
+    }
+    // Same dense-ranking convention as the normalized ranking (ties share
+    // a rank) — computed purely to diff against, never persisted.
+    const byRawDesc = [...averageRawBySubmission.entries()].sort((a, b) => b[1] - a[1]);
+    const rawRankBySubmission = new Map<string, number>();
+    let rawRank = 0;
+    let previousRaw: number | null = null;
+    for (const [submissionId, avg] of byRawDesc) {
+      if (previousRaw === null || avg !== previousRaw) {
+        rawRank += 1;
+        previousRaw = avg;
+      }
+      rawRankBySubmission.set(submissionId, rawRank);
+    }
+
+    return {
+      ...run,
+      normalizedScores: run.normalizedScores.map((ns) => ({
+        ...ns,
+        averageRawTotal: averageRawBySubmission.get(ns.submissionId) ?? null,
+        rawRank: rawRankBySubmission.get(ns.submissionId) ?? null,
+      })),
+    };
   }
 
   private async getEventOrThrow(eventId: string) {

@@ -30,6 +30,10 @@ export class ScoringService {
       scores,
       overallFeedback: review?.overallFeedback ?? null,
       revisionCount: review?.revisionCount ?? 0,
+      // Backs the design doc's persistent "Last submitted {time ago}"
+      // note on a resubmittable (COMPLETED) review — wasn't returned at
+      // all before, since nothing server-side needed it until now.
+      submittedAt: review?.submittedAt ?? null,
     };
   }
 
@@ -37,6 +41,7 @@ export class ScoringService {
   // Never writes a ScoreRevision (D111) — only submitReview does.
   async saveDraft(assignmentId: string, userId: string, dto: SaveDraftDto) {
     const assignment = await this.getOwnedAssignmentOrThrow(assignmentId, userId);
+    this.assertNotTransferred(assignment);
     await this.assertJudgingStillOpen(assignment.eventId);
 
     if (dto.scores?.length) {
@@ -95,6 +100,7 @@ export class ScoringService {
   // content mutability.
   async submitReview(assignmentId: string, userId: string) {
     const assignment = await this.getOwnedAssignmentOrThrow(assignmentId, userId);
+    this.assertNotTransferred(assignment);
     await this.assertJudgingStillOpen(assignment.eventId);
 
     const [criteria, scores, review] = await Promise.all([
@@ -167,6 +173,26 @@ export class ScoringService {
       });
     }
     return assignment;
+  }
+
+  // docs/design/08-rubric-and-scoring.md Section 4 States: "Assignment
+  // already TRANSFERRED away from this judge... any further save/submit
+  // attempt is rejected by the backend" — that rejection didn't actually
+  // exist anywhere; getOwnedAssignmentOrThrow only ever checked judgeId,
+  // and a TRANSFERRED row's judgeId is untouched (Module 7's transfer()
+  // updates status on the original row, judgeId included by name only —
+  // see assignments.service.ts). Deliberately not folded into
+  // getOwnedAssignmentOrThrow itself: the read path (getForScoring)
+  // needs to keep succeeding for a transferred assignment so the
+  // frontend can detect the status and show/redirect accordingly, not
+  // get a bare error instead.
+  private assertNotTransferred(assignment: { status: string }): void {
+    if (assignment.status === 'TRANSFERRED') {
+      throw new ForbiddenException({
+        code: 'ASSIGNMENT_TRANSFERRED',
+        message: 'This assignment is no longer yours.',
+      });
+    }
   }
 
   // Server time only, on every write (CLAUDE.md principle 2) — same

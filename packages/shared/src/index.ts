@@ -18,6 +18,7 @@ export type EventStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'DELETED';
 export type TrackAttachmentMode = 'NONE' | 'SINGLE' | 'MULTIPLE';
 export type SubmissionType = 'SOLO' | 'TEAM';
 export type PrizeDecidedBy = 'JUDGES' | 'PUBLIC_VOTE';
+export type RubricCriterionKind = 'SCORING' | 'BONUS' | 'SPECIAL_AWARD';
 
 // Module 3's computed-not-stored phase — see
 // apps/api/src/events/utils/event-phase.ts. null for a non-PUBLISHED
@@ -57,6 +58,13 @@ export interface PublicEvent {
   status: EventStatus;
   maxTeamSize: number;
   trackAttachmentMode: TrackAttachmentMode;
+  // Module 7's event-wide default judge workload cap (per-judge
+  // overridable via EventMembership.projectLimitOverride) and Module 8's
+  // organizer-facing display scale — both plain Event columns already
+  // returned by toPublicEvent's full-row spread, just undeclared here
+  // until the assignment board needed the first one.
+  maxProjectsPerJudge: number;
+  finalScoreDisplayScale: number;
   registrationOpensAt: string;
   registrationClosesAt: string;
   eventStartsAt: string;
@@ -82,6 +90,47 @@ export interface PublicEvent {
   // than relying on those responses for track/prize data.
   tracks?: Track[];
   prizes?: Prize[];
+  // Same include-on-detail-and-list, omit-on-write pattern as tracks/prizes
+  // (events.service.ts's toPublicEvent generic already carries this
+  // through; just hadn't been declared here until Module 8 needed it).
+  rubricCriteria?: RubricCriterion[];
+}
+
+// Module 8 — docs/design/08-rubric-and-scoring.md Section 2. One flat
+// list per event; weightPercent only for SCORING, maxPoints only for
+// BONUS, neither for SPECIAL_AWARD (RubricCriteriaService enforces this
+// shape server-side, not just by convention).
+export interface RubricCriterion {
+  id: string;
+  eventId: string;
+  kind: RubricCriterionKind;
+  label: string;
+  description: string;
+  weightPercent: number | null;
+  maxPoints: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Score {
+  id: string;
+  judgeAssignmentId: string;
+  criterionId: string;
+  value: number;
+  note: string | null;
+}
+
+// GET/PATCH /assignments/:id (scoring) — ScoringService.getForScoring's
+// exact response shape, returned again after every saveDraft/submitReview.
+export interface ScoringData {
+  assignmentId: string;
+  status: AssignmentStatus;
+  submissionId: string;
+  criteria: RubricCriterion[];
+  scores: Score[];
+  overallFeedback: string | null;
+  revisionCount: number;
+  submittedAt: string | null;
 }
 
 export interface PublicEventMembership {
@@ -90,6 +139,12 @@ export interface PublicEventMembership {
   eventId: string;
   role: EventRole;
   trackIds: string[];
+  // Module 7's per-judge override of Event.maxProjectsPerJudge (Section
+  // 4/7, docs/stages/07-judge-assignment.md) — null means "use the
+  // event default." Was already returned by the API (a plain column on
+  // the row toPublicMembership strips only invitationTokenHash from);
+  // just hadn't been declared here yet.
+  projectLimitOverride: number | null;
   invitationStatus: InvitationStatus;
   invitedByUserId: string | null;
   invitedAt: string | null;
@@ -229,6 +284,58 @@ export interface VerificationRow {
   reviewedAt: string | null;
 }
 
+export type AssignmentStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'TRANSFERRED';
+export type AssignmentMethod = 'MANUAL' | 'ALGORITHMIC';
+
+// GET /events/:eventId/assignments/assignable-submissions — the
+// organizer assignment board's left pane (Module 7).
+export interface AssignableSubmission {
+  submissionId: string;
+  title: string | null;
+  trackIds: string[];
+  assignedJudges: Array<{
+    assignmentId: string;
+    judgeId: string;
+    displayName: string;
+    email: string;
+    status: AssignmentStatus;
+  }>;
+}
+
+// GET /events/:eventId/assignments (and /mine) — a single assignment
+// row, judge- or submission-facing depending on which route returned it.
+export interface JudgeAssignmentRow {
+  id: string;
+  eventId: string;
+  judgeId: string;
+  submissionId: string;
+  status: AssignmentStatus;
+  assignmentMethod: AssignmentMethod;
+  transferredFromAssignmentId: string | null;
+  assignedAt: string;
+  judge?: { id: string; displayName: string; email: string };
+  submission?: { id: string; title: string | null };
+}
+
+// GET /events/:eventId/assignments/mine specifically — richer
+// submission projection (track ids + disqualified-after-assignment
+// detection) than the generic JudgeAssignmentRow other list routes return.
+export interface MyAssignmentRow extends Omit<JudgeAssignmentRow, 'submission'> {
+  submission: { id: string; title: string | null; trackIds: string[]; disqualified: boolean } | null;
+}
+
+// GET /events/:eventId/assignments/progress — per-judge workload,
+// always live-computed (Module 7/8's shared progress dashboard).
+export interface JudgeProgress {
+  judgeId: string;
+  displayName: string;
+  email: string;
+  total: number;
+  completed: number;
+  inProgress: number;
+  pending: number;
+}
+
 // siteAdmin's "drafts in progress" list — deliberately not `Submission`;
 // it's a narrower projection the backend query never pulls
 // title/description/links for at all (Section 6,
@@ -240,6 +347,68 @@ export interface DraftInProgressSummary {
   soloUserId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+// Module 9 (Normalization) — GET /events/:eventId/normalization-runs.
+export interface NormalizationRunSummary {
+  id: string;
+  eventId: string;
+  runByUserId: string;
+  runAt: string;
+  method: 'Z_SCORE';
+  minimumN: number;
+  eventMean: number;
+  eventStdDev: number;
+}
+
+export interface NormalizedJudgeScoreRow {
+  id: string;
+  normalizationRunId: string;
+  judgeAssignmentId: string;
+  rawTotal: number;
+  judgeMeanAtRun: number;
+  judgeStdDevAtRun: number;
+  sampleCountAtRun: number;
+  usedFallback: boolean;
+  uniformScoringFlagged: boolean;
+  zScore: number;
+  // Joined in NormalizationService.getDetail — wasn't there before,
+  // the calibration panel needs a name per row, not just an assignment id.
+  judgeAssignment: { judgeId: string; submissionId: string; judge: { displayName: string } };
+}
+
+export interface NormalizedScoreRow {
+  id: string;
+  normalizationRunId: string;
+  submissionId: string;
+  averagedZScore: number;
+  rescaledValue: number;
+  finalScore: number;
+  rank: number;
+  submission: { title: string | null };
+  // Derived, read-only, in NormalizationService.getDetail — the actual
+  // "Normalization Proof" data (design/09-normalization.md Section 1):
+  // per-submission raw average and the ranking that average alone would
+  // produce, to diff against the normalized rank above.
+  averageRawTotal: number | null;
+  rawRank: number | null;
+}
+
+export interface NormalizationRunDetail extends NormalizationRunSummary {
+  judgeScores: NormalizedJudgeScoreRow[];
+  normalizedScores: NormalizedScoreRow[];
+}
+
+// GET /admin/judges/:userId/calibration — platform-wide, live-updating
+// (Section 8, docs/stages/09-normalization.md).
+export interface JudgeCalibrationProfile {
+  id: string;
+  displayName: string;
+  email: string;
+  accountType: AccountType;
+  judgeCalibrationMean: number;
+  judgeCalibrationStdDev: number;
+  judgeCalibrationSampleCount: number;
 }
 
 export interface ApiErrorBody {
