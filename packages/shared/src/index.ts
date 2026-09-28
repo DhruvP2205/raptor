@@ -70,12 +70,10 @@ export interface PublicEvent {
   createdAt: string;
   updatedAt: string;
   phase: EventPhase | null;
-  // Only present on the GET /events/:slug detail response — the
-  // EventsService query backing it is the only one that `include`s
-  // these relations. Every other Event-returning endpoint (list,
-  // create, update, publish, archive) omits them; re-fetch by slug
-  // after a track/prize mutation rather than relying on those
-  // responses for this data.
+  // Present on GET /events/:slug (detail) and GET /events (list) —
+  // both `include` these relations (D84/D88, docs/DECISIONS.md).
+  // create/update/publish/archive still omit them; re-fetch rather
+  // than relying on those responses for track/prize data.
   tracks?: Track[];
   prizes?: Prize[];
 }

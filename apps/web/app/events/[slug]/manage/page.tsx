@@ -3,6 +3,7 @@
 import { EventForm } from '@/components/events/EventForm';
 import { ManageNav } from '@/components/events/ManageNav';
 import { StatusBadge } from '@/components/events/PhaseBadge';
+import { PosterUpload } from '@/components/events/PosterUpload';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Card, Container } from '@/components/ui/Card';
@@ -108,6 +109,15 @@ export default function ManageEventPage() {
       <div className="mb-4">
         <ApiErrorAlert error={actionError} />
       </div>
+
+      <Card className="mb-6 max-w-3xl">
+        <h2 className="mb-3 font-display text-lg text-ink">Poster</h2>
+        <PosterUpload
+          eventId={event.id}
+          posterUrl={event.posterUrl}
+          onUploaded={(posterUrl) => setEvent((e) => (e ? { ...e, posterUrl } : e))}
+        />
+      </Card>
 
       <Card className="max-w-3xl">
         <EventForm

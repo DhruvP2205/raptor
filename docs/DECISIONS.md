@@ -969,3 +969,28 @@ read as a generic SaaS template. Component/token *names* were kept
 unchanged (`ink`, `paper`, `accent`, etc.) — only their values and a
 few components' internal markup changed — specifically so this was a
 values-and-markup revision, not a rename sweep across every page.
+
+**D88 — The homepage now shows real, live event data (posters, phase
+-grouped sections, defined prizes) instead of generic marketing copy;
+`listPublicEvents` extended to `include: { tracks, prizes }` to match
+`getEventBySlug`, and poster-upload UI was added (deferred as an
+explicit scope cut when the frontend was first built).**
+Context: user feedback — the homepage should look like an actual
+hackathon platform (posters, new/upcoming hackathons, results, prizes),
+not a generic SaaS landing page. Three sections, grouped by a new
+`eventStage()` helper (`lib/format.ts`) over the existing computed
+`EventPhase`: "Happening now" (registration/submissions/judging/voting
+all in progress), "Coming soon" (`NOT_STARTED`), "Results & prizes"
+(`RESULTS_ANNOUNCED`/`VOTING_CLOSED`/`VOTING_WINNER_ANNOUNCED`). The
+results section is deliberately labeled and built around **prizes**
+(each event's defined `Prize` rows — name, rank, judged-vs-public-vote),
+**not winners** — there is no judging/voting data model or stage doc
+yet (T2), so no "who won" fact exists anywhere in the schema to
+display. Showing a fabricated winner name would be worse than showing
+nothing; the section copy says exactly this ("not a judged winner —
+judging isn't built yet") rather than silently omitting the section or
+implying data that doesn't exist.
+`listPublicEvents` previously omitted `tracks`/`prizes` (D84 noted only
+`getEventBySlug` included them) — extending it the same way avoids an
+N+1 fetch-per-card on a homepage that lists many events, and closes the
+inconsistency D84 flagged rather than working around it a second time.

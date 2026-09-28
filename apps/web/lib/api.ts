@@ -14,6 +14,14 @@ import type {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
+// Event.posterUrl/thumbnailUrl are relative (`/uploads/:id`) — the API
+// and web run on different origins, so an <img src> needs the API's
+// origin prefixed or the browser requests it from the web app itself.
+export function resolveMediaUrl(path: string | null): string | null {
+  if (!path) return null;
+  return `${API_URL}${path}`;
+}
+
 export class ApiError extends Error {
   code?: string;
   fields?: string[];
@@ -164,6 +172,36 @@ export function publishEvent(eventId: string) {
 
 export function archiveEvent(eventId: string) {
   return apiFetch<PublicEvent>(`/events/${eventId}/archive`, { method: 'POST' });
+}
+
+// Multipart, so it bypasses apiFetch's JSON body handling — the
+// browser sets Content-Type (with the correct boundary) itself when
+// the body is a FormData and no Content-Type header is set manually.
+async function uploadImage(
+  path: string,
+  file: File,
+): Promise<{ posterUrl?: string; thumbnailUrl?: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    throw new ApiError(res.status, data ?? { message: res.statusText });
+  }
+  return data;
+}
+
+export function uploadEventPoster(eventId: string, file: File) {
+  return uploadImage(`/events/${eventId}/poster`, file);
+}
+
+export function uploadEventThumbnail(eventId: string, file: File) {
+  return uploadImage(`/events/${eventId}/thumbnail`, file);
 }
 
 export function deleteEvent(eventId: string) {

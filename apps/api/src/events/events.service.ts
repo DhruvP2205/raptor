@@ -238,9 +238,13 @@ export class EventsService {
   }
 
   async listPublicEvents(phaseFilter?: EventPhase) {
+    // Same include as getEventBySlug (D84, docs/DECISIONS.md) — kept
+    // consistent so every public-facing Event response carries
+    // tracks/prizes, not just the single-event detail route.
     const events = await this.prisma.event.findMany({
       where: { status: 'PUBLISHED' },
       orderBy: { eventStartsAt: 'asc' },
+      include: { tracks: true, prizes: true },
     });
     const withPhase = events.map((e) => this.toPublicEvent(e));
     return phaseFilter

@@ -1,93 +1,124 @@
+'use client';
+
+import { EventCard } from '@/components/events/EventCard';
+import { EventResultCard } from '@/components/events/EventResultCard';
 import { Button } from '@/components/ui/Button';
 import { Container } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PageSpinner } from '@/components/ui/Spinner';
+import { listEvents } from '@/lib/api';
+import { eventStage } from '@/lib/format';
+import type { PublicEvent } from '@raptor/shared';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
 
-const TERMINAL_LINES = [
-  { prompt: true, text: 'docker compose up' },
-  { text: 'raptor-api    | Nest application successfully started' },
-  { text: 'raptor-web    | ready on :3000' },
-  { text: 'raptor-db     | database system is ready to accept connections' },
-  { ok: true, text: 'No external accounts. No hosted services. Just your infra.' },
-];
+function Section({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="border-t border-line py-12">
+      <Container>
+        <div className="mb-6 flex items-end justify-between gap-4">
+          <div>
+            <h2 className="font-display text-xl text-ink">{title}</h2>
+            {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
+          </div>
+        </div>
+        {children}
+      </Container>
+    </section>
+  );
+}
 
 export default function HomePage() {
+  const [events, setEvents] = useState<PublicEvent[] | null>(null);
+
+  useEffect(() => {
+    listEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]));
+  }, []);
+
+  const live = events?.filter((e) => eventStage(e.phase) === 'live') ?? [];
+  const upcoming = events?.filter((e) => eventStage(e.phase) === 'upcoming') ?? [];
+  const results = events?.filter((e) => eventStage(e.phase) === 'results') ?? [];
+
   return (
     <div>
       <section className="border-b border-line">
-        <Container className="grid gap-12 py-16 sm:py-20 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:py-28">
-          <div className="flex flex-col gap-6">
-            <h1 className="max-w-xl font-display text-4xl text-ink sm:text-5xl">
-              Run your hackathon on infrastructure you actually own.
-            </h1>
-            <p className="max-w-md text-base text-ink-muted">
-              Raptor is a submission &amp; judging platform an organizer can
-              run for real, from registration through results — no hosted
-              third-party service anywhere in the stack.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Link href="/events">
-                <Button size="md">Browse events</Button>
-              </Link>
-              <Link href="/signup">
-                <Button size="md" variant="secondary">
-                  Create an account
-                </Button>
-              </Link>
-            </div>
-          </div>
-
-          <div className="rounded-md border border-line-strong bg-ink text-white shadow-popover">
-            <div className="flex items-center gap-1.5 border-b border-white/10 px-4 py-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-              <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-              <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-            </div>
-            <div className="space-y-2 px-4 py-5 font-mono text-xs leading-relaxed sm:text-sm">
-              {TERMINAL_LINES.map((line, i) => (
-                <p
-                  key={i}
-                  className={
-                    line.prompt
-                      ? 'text-white'
-                      : line.ok
-                        ? 'pt-2 text-white/70'
-                        : 'text-white/50'
-                  }
-                >
-                  {line.prompt ? <span className="text-accent">$ </span> : null}
-                  {line.text}
-                </p>
-              ))}
-            </div>
+        <Container className="flex flex-col gap-5 py-14 sm:py-16">
+          <h1 className="max-w-2xl font-display text-3xl text-ink sm:text-4xl">
+            Run your hackathon on infrastructure you actually own.
+          </h1>
+          <p className="max-w-xl text-base text-ink-muted">
+            Register, form teams, submit projects, and track results — a
+            self-hostable platform with no third-party service in the stack.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/events">
+              <Button size="md">Browse all events</Button>
+            </Link>
+            <Link href="/signup">
+              <Button size="md" variant="secondary">
+                Create an account
+              </Button>
+            </Link>
           </div>
         </Container>
       </section>
 
-      <Container className="py-16">
-        <dl className="grid gap-x-12 gap-y-10 sm:grid-cols-3">
-          <div>
-            <dt className="font-display text-base text-ink">Register &amp; team up</dt>
-            <dd className="mt-2 text-sm text-ink-muted">
-              Join solo or form a team with a join code. One participation
-              track per event — no duplicate entries.
-            </dd>
-          </div>
-          <div>
-            <dt className="font-display text-base text-ink">Submit with confidence</dt>
-            <dd className="mt-2 text-sm text-ink-muted">
-              Save drafts freely, submit when ready, keep editing until the
-              deadline — enforced on the server, not the browser clock.
-            </dd>
-          </div>
-          <div>
-            <dt className="font-display text-base text-ink">Built for organizers</dt>
-            <dd className="mt-2 text-sm text-ink-muted">
-              Configure tracks, prizes, and the full event timeline. Every
-              privileged action is written to an audit trail.
-            </dd>
-          </div>
-        </dl>
-      </Container>
+      {events === null ? (
+        <div className="py-16">
+          <PageSpinner />
+        </div>
+      ) : (
+        <>
+          <Section title="Happening now" description="Registration, submissions, or judging currently open.">
+            {live.length === 0 ? (
+              <EmptyState title="Nothing happening right now" description="Check back soon." />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {live.map((e) => (
+                  <EventCard key={e.id} event={e} />
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section title="Coming soon" description="Published, not yet open for registration.">
+            {upcoming.length === 0 ? (
+              <EmptyState title="Nothing announced yet" description="New hackathons will show up here." />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {upcoming.map((e) => (
+                  <EventCard key={e.id} event={e} />
+                ))}
+              </div>
+            )}
+          </Section>
+
+          <Section
+            title="Results & prizes"
+            description="Prizes each event has on offer — not a judged winner (judging isn't built yet)."
+          >
+            {results.length === 0 ? (
+              <EmptyState title="No results announced yet" description="Finished events will show up here." />
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {results.map((e) => (
+                  <EventResultCard key={e.id} event={e} />
+                ))}
+              </div>
+            )}
+          </Section>
+        </>
+      )}
     </div>
   );
 }
