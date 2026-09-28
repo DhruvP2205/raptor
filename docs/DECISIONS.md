@@ -638,3 +638,40 @@ this, the only way to reuse that construction would be a third copy of
 the same formula. Standard Docker entrypoint idiom; this is the only
 sanctioned way `scripts/bootstrap-admin.ts` is ever meant to run in a
 real deployment.
+
+**D67 — Two vulnerabilities found during a full security review of
+Modules 1–2, both confirmed by live measurement (not just read from the
+code) and fixed immediately:**
+
+1. **Login had a ~25x timing side-channel that leaked which emails are
+   registered.** `login()` returned on "no such user" *before* ever
+   calling `argon2.verify()` — measured live: ~72ms for a real email
+   (wrong password) vs. ~2.8ms for a nonexistent one, trivially
+   distinguishable over a real network, and the identical error message
+   did nothing to stop it. Fixed by always calling `argon2.verify()`
+   first — against the real `passwordHash` if the user exists, or a
+   fixed, precomputed `DUMMY_PASSWORD_HASH` (no corresponding real
+   password) if not — and only branching on "user exists / password
+   valid / banned" *after* that call resolves. The banned-account check
+   moved to *after* the password verify for the same reason (telling an
+   attacker "this account exists and is banned" before checking their
+   password was the same class of leak, just smaller). Re-measured live
+   after the fix: ~68ms vs. ~58ms — the 25x gap collapsed to ~1.15x,
+   consistent with ordinary system noise rather than a reliable signal.
+2. **`EventMembership` API responses leaked `invitationTokenHash`.**
+   Every method in `MembershipService` returned the raw Prisma row,
+   unlike `AuthService`'s `toPublicUser()`. Confirmed live: the
+   organizer dashboard and every invite/resend/accept response included
+   the hash. Not a direct account-takeover vector (it's a one-way
+   hash), but pure unnecessary exposure of internal security material.
+   Fixed with a `toPublicMembership()` mapper (same data-minimization
+   principle as `toPublicUser()`), applied at every method that returns
+   a membership to a controller — confirmed live that the field is gone
+   from every response and the accept/invite/resend flows still work
+   end to end.
+
+Both have regression tests. The timing fix's test asserts wall-clock
+duration (`argon2.verify`'s native export isn't spy-able — attempting
+`jest.spyOn` on it throws `Cannot redefine property`) rather than call
+count; the token-hash fix has a dedicated "never returned to a caller"
+test suite covering every public method.

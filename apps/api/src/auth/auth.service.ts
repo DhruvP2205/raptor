@@ -20,6 +20,13 @@ import { SESSION_COOKIE_NAME, SessionService } from './session.service';
 
 type EmailDispatchStatus = 'sent' | 'not_configured' | 'failed';
 
+// A fixed, precomputed argon2 hash with no corresponding real
+// password — used only to give login() something to verify against
+// when no user was found, so that path costs the same as a real
+// verify. Never meant to match any password; rotating it is harmless.
+const DUMMY_PASSWORD_HASH =
+  '$argon2id$v=19$m=65536,t=3,p=4$f9na4+DP+xR3BejLNjwAmw$DRn1RBOQTZ4k7s+xPf7qLVDqDO3v6Ts5ZcsVyZiyk/g';
+
 function isTestMode(): boolean {
   return process.env.TEST_MODE === 'true';
 }
@@ -122,9 +129,22 @@ export class AuthService {
     const email = normalizeEmail(dto.email);
     const user = await this.prisma.user.findUnique({ where: { email } });
 
-    // Generic failure for both "no such user" and "wrong password" —
-    // never reveal which part was wrong.
-    if (!user) {
+    // Always pay the same argon2 cost whether or not the user exists —
+    // previously this returned immediately on "no such user," before
+    // ever calling argon2.verify(), which is a real, measured timing
+    // side-channel (confirmed live: ~72ms for a real email vs. ~2.8ms
+    // for a nonexistent one — trivially distinguishable over a
+    // network). DUMMY_PASSWORD_HASH is a fixed, precomputed hash with
+    // no corresponding password; verifying against it always returns
+    // false but costs the same as a real verify.
+    const valid = await argon2.verify(
+      user?.passwordHash ?? DUMMY_PASSWORD_HASH,
+      dto.password,
+    );
+
+    // Same generic failure for "no such user" and "wrong password" —
+    // never reveal which part was wrong, in the response OR in timing.
+    if (!user || !valid) {
       throw new UnauthorizedException({
         code: 'INVALID_CREDENTIALS',
         message: 'Incorrect email or password.',
@@ -138,18 +158,15 @@ export class AuthService {
     // allowing full login for a banned account while only blocking
     // re-signup would be an inconsistent half-enforcement. Flag back if
     // a different behavior is wanted once the ban-issuing module exists.
+    // Deliberately checked AFTER the password verify above (not
+    // before) — revealing "this account is banned" only once the
+    // caller has already proven the correct password is a much smaller
+    // leak than revealing it via a fast-fail timing gap before any
+    // credential has been checked at all.
     if (user.bannedAt) {
       throw new ForbiddenException({
         code: 'ACCOUNT_BANNED',
         message: 'This account has been banned.',
-      });
-    }
-
-    const valid = await argon2.verify(user.passwordHash, dto.password);
-    if (!valid) {
-      throw new UnauthorizedException({
-        code: 'INVALID_CREDENTIALS',
-        message: 'Incorrect email or password.',
       });
     }
 

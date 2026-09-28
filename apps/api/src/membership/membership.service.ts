@@ -13,6 +13,19 @@ import { generateRawToken, sha256Hex } from '../common/crypto.util';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+// invitationTokenHash is internal security material — even though it's
+// a one-way hash and not directly exploitable, there's no consumer need
+// for any API response to ever return it (same data-minimization
+// principle auth.service.ts's toPublicUser() already applies to
+// passwordHash). Every method that returns a membership to a
+// controller goes through this.
+function toPublicMembership<T extends { invitationTokenHash: string | null }>(
+  membership: T,
+): Omit<T, 'invitationTokenHash'> {
+  const { invitationTokenHash, ...rest } = membership;
+  return rest;
+}
+
 // Event-level attachment of staff to a specific event — organizer
 // (direct, no acceptance step) vs. judge (invite, accept/decline,
 // expiry). See docs/stages/02-roles-and-membership.md Sections 3 & 5.
@@ -82,7 +95,7 @@ export class MembershipService {
     eventId: string,
     actingUserId: string,
     targetEmail: string,
-  ): Promise<EventMembership> {
+  ): Promise<Omit<EventMembership, 'invitationTokenHash'>> {
     const target = await this.prisma.user.findUnique({
       where: { email: targetEmail.trim().toLowerCase() },
     });
@@ -113,14 +126,14 @@ export class MembershipService {
       eventId,
       targetUserId: target.id,
     });
-    return membership;
+    return toPublicMembership(membership);
   }
 
   async inviteJudgeDirect(
     eventId: string,
     actingUserId: string,
     targetEmail: string,
-  ): Promise<EventMembership> {
+  ): Promise<Omit<EventMembership, 'invitationTokenHash'>> {
     const normalizedEmail = targetEmail.trim().toLowerCase();
     const target = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
@@ -168,14 +181,14 @@ export class MembershipService {
       eventId,
       targetUserId: target.id,
     });
-    return membership;
+    return toPublicMembership(membership);
   }
 
   async resendInvitation(
     eventId: string,
     membershipId: string,
     actingUserId: string,
-  ): Promise<EventMembership> {
+  ): Promise<Omit<EventMembership, 'invitationTokenHash'>> {
     const membership = await this.prisma.eventMembership.findUnique({
       where: { id: membershipId },
     });
@@ -213,14 +226,14 @@ export class MembershipService {
       membershipId,
       targetUserId: membership.userId,
     });
-    return updated;
+    return toPublicMembership(updated);
   }
 
   async respondToInvitation(
     rawToken: string,
     userId: string,
     accept: boolean,
-  ): Promise<EventMembership> {
+  ): Promise<Omit<EventMembership, 'invitationTokenHash'>> {
     const tokenHash = sha256Hex(rawToken);
     const membership = await this.prisma.eventMembership.findUnique({
       where: { invitationTokenHash: tokenHash },
@@ -264,7 +277,7 @@ export class MembershipService {
       { eventId: membership.eventId, membershipId: membership.id },
     );
 
-    return updated;
+    return toPublicMembership(updated);
   }
 
   // A real, enforced state transition checked server-side against
@@ -307,13 +320,14 @@ export class MembershipService {
   // Organizer/admin-facing invitation dashboard (Section 3.2).
   async listJudgeInvitations(eventId: string) {
     await this.expireStalePendingJudgeInvitations(eventId);
-    return this.prisma.eventMembership.findMany({
+    const rows = await this.prisma.eventMembership.findMany({
       where: { eventId, role: 'JUDGE' },
       include: {
         user: { select: { id: true, email: true, displayName: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
+    return rows.map(toPublicMembership);
   }
 
   // Shared by inviteJudgeDirect (first invite) and resendInvitation

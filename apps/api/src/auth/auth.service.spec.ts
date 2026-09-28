@@ -143,7 +143,12 @@ describe('AuthService', () => {
         id: '1',
         email: 'banned@example.com',
         bannedAt: new Date(),
-        passwordHash: 'irrelevant',
+        // A real hash for 'whatever' — login() now always calls
+        // argon2.verify() (see D-timing-fix), so this has to actually
+        // verify for the test to exercise "correct password, still
+        // banned" rather than failing earlier on a bad hash format.
+        passwordHash:
+          '$argon2id$v=19$m=65536,t=3,p=4$Tzp1wd/n6UPFxVztINRzHw$78dmaFfdxdtgfjvSA+VFoj2CFpu9q2gDf51DXlTjt14',
       });
       const sessions = makeSessions();
       const service = new AuthService(prisma as any, makeMail() as any, sessions as any);
@@ -166,6 +171,32 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'nobody@example.com', password: 'whatever' }, req, res),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('still pays the full argon2 cost when no user is found (timing-safety regression guard)', async () => {
+      // argon2's native verify export isn't spy-able (non-configurable
+      // binding property), so this asserts the observable consequence
+      // instead: a real argon2.verify() call against a real hash takes
+      // tens of milliseconds, not sub-millisecond. This is exactly the
+      // gap that was measured live before the fix (~72ms for a real
+      // email vs. ~2.8ms for a nonexistent one) — a nonexistent-user
+      // login finishing in under 10ms here would mean the short-circuit
+      // regressed.
+      const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue(null);
+      const service = new AuthService(
+        prisma as any,
+        makeMail() as any,
+        makeSessions() as any,
+      );
+
+      const start = Date.now();
+      await expect(
+        service.login({ email: 'nobody@example.com', password: 'whatever' }, req, res),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      const elapsedMs = Date.now() - start;
+
+      expect(elapsedMs).toBeGreaterThan(10);
     });
   });
 

@@ -298,6 +298,76 @@ describe('MembershipService', () => {
       expect(result.invitationStatus).toBe('EXPIRED');
     });
   });
+
+  // Regression guard for the invitationTokenHash leak: every method a
+  // controller calls directly must never return it, even though it's
+  // stored in the row. See docs/DECISIONS.md.
+  describe('invitationTokenHash is never returned to a caller', () => {
+    it('addOrganizerDirect', async () => {
+      const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue({ id: 'u2', accountType: 'ORGANIZER' });
+      prisma.eventMembership.findUnique.mockResolvedValue(null);
+      prisma.eventMembership.create.mockResolvedValue({ id: 'm1', invitationTokenHash: 'secret-hash' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.addOrganizerDirect('event-1', 'actor-1', 'org@example.com');
+      expect(result).not.toHaveProperty('invitationTokenHash');
+    });
+
+    it('inviteJudgeDirect', async () => {
+      const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue({ id: 'u2', email: 'j@example.com', accountType: 'JUDGE' });
+      prisma.eventMembership.findUnique.mockResolvedValue(null);
+      prisma.eventMembership.create.mockResolvedValue({ id: 'm1' });
+      prisma.eventMembership.update.mockResolvedValue({ id: 'm1', invitationTokenHash: 'secret-hash' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.inviteJudgeDirect('event-1', 'actor-1', 'j@example.com');
+      expect(result).not.toHaveProperty('invitationTokenHash');
+    });
+
+    it('resendInvitation', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue({ id: 'm1', eventId: 'event-1', role: 'JUDGE', invitationStatus: 'PENDING' });
+      prisma.user.findUniqueOrThrow.mockResolvedValue({ id: 'u2', email: 'j@example.com' });
+      prisma.eventMembership.update.mockResolvedValue({ id: 'm1', invitationTokenHash: 'secret-hash' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.resendInvitation('event-1', 'm1', 'actor-1');
+      expect(result).not.toHaveProperty('invitationTokenHash');
+    });
+
+    it('respondToInvitation', async () => {
+      const prisma = makePrisma();
+      const membership = { id: 'm1', eventId: 'event-1', userId: 'u2', invitationStatus: 'PENDING' };
+      prisma.eventMembership.findUnique.mockResolvedValue(membership);
+      prisma.event.findUniqueOrThrow.mockResolvedValue({ eventStartsAt: new Date(Date.now() + 1000 * 60 * 60) });
+      prisma.eventMembership.update.mockResolvedValue({ ...membership, invitationStatus: 'ACCEPTED', invitationTokenHash: 'secret-hash' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.respondToInvitation('token', 'u2', true);
+      expect(result).not.toHaveProperty('invitationTokenHash');
+    });
+
+    it('listJudgeInvitations', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUniqueOrThrow.mockResolvedValue({ eventStartsAt: new Date(Date.now() + 1000 * 60 * 60) });
+      prisma.eventMembership.findMany.mockResolvedValue([
+        { id: 'm1', invitationTokenHash: 'secret-hash-1', user: { id: 'u1', email: 'a@example.com', displayName: 'A' } },
+        { id: 'm2', invitationTokenHash: 'secret-hash-2', user: { id: 'u2', email: 'b@example.com', displayName: 'B' } },
+      ]);
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.listJudgeInvitations('event-1');
+      expect(result).toHaveLength(2);
+      for (const row of result) {
+        expect(row).not.toHaveProperty('invitationTokenHash');
+      }
+      // The nested user object (a legitimate, intentional field) must
+      // survive the sanitization untouched.
+      expect(result[0].user).toEqual({ id: 'u1', email: 'a@example.com', displayName: 'A' });
+    });
+  });
 });
 
 describe('sha256Hex sanity (used for invitation tokens)', () => {
