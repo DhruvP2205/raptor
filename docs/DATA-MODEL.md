@@ -6,23 +6,23 @@ human-readable narrative version of `apps/api/prisma/schema.prisma`.
 **Status note:** the schema described below is the cumulative target —
 every decision locked through Module 5 (Submission Management).
 `apps/api/prisma/schema.prisma` is built up **incrementally, stage by
-stage**, matching each stage doc's own declared scope. **Modules 1, 2,
-3, and 4 are implemented** (`User`, `Session`, `EventMembership`,
-`AuditLog`, the full `Event` table including `maxTeamSize`, `Track`,
-`Prize`, `Team`, `TeamMembership`). `Event` started as a deliberately
-minimal anchor in Module 2 (D59) and Module 3 grew it additively to the
-full shape below; Module 4 added `maxTeamSize` the same way (D75).
-`trackAttachmentMode` (Module 5) is still deliberately absent, along
-with `eventClosedAt` (voting, no locked stage doc yet). `Submission`
-exists in the live schema only as a minimal anchor — `id`, `teamId`,
-`everSubmitted`, `createdAt` (D75) — Module 5 is expected to extend it
-additively to the full shape below, not redefine it. If the live schema
-and a field documented here disagree **and the owning module has
-already been implemented**, that's a bug, with the narrower exception
-of `Submission`'s still-anchor-only fields noted above. Certificates and
-voting are discussed extensively in `DECISIONS.md` but don't have a
-finalized stage doc yet, so their tables are sketched here as
-forward-looking and may still shift.
+stage**, matching each stage doc's own declared scope. **Modules 1
+through 5 are all implemented** (`User`, `Session`, `EventMembership`,
+`AuditLog`, the full `Event` table including `maxTeamSize` and
+`trackAttachmentMode`, `Track`, `Prize`, `Team`, `TeamMembership`, the
+full `Submission` table). `Event` started as a deliberately minimal
+anchor in Module 2 (D59) and Module 3 grew it additively to the full
+shape below; Module 4 added `maxTeamSize` the same way (D75), Module 5
+added `trackAttachmentMode` (D75-equivalent pattern, same commit).
+`Submission` started as a minimal anchor in Module 4 — `id`, `teamId`,
+`everSubmitted`, `createdAt` (D75) — and Module 5 extended it additively
+to the full shape below, per its own scope. `eventClosedAt` is still
+deliberately absent (voting, no locked stage doc yet). If the live
+schema and a field documented here disagree **and the owning module has
+already been implemented**, that's a bug. Certificates and voting are
+discussed extensively in `DECISIONS.md` but don't have a finalized stage
+doc yet, so their tables are sketched here as forward-looking and may
+still shift.
 
 ---
 
@@ -104,7 +104,7 @@ registration opens" supported use case (Section 8).
 | `name`, `description` | markdown string, nullable | Sanitized on every render (D18), through `MarkdownService` — the same function for preview and production |
 | `posterUrl`, `thumbnailUrl` | nullable | Local-disk-served, re-encoded on upload (D19, D71 — always re-encoded to JPEG regardless of input format) |
 | `status` | enum: `DRAFT \| PUBLISHED \| ARCHIVED \| DELETED` | Manual, actor-controlled (D15). `DELETED` reachable from DRAFT or PUBLISHED, not ARCHIVED (D70). |
-| ~~`trackAttachmentMode`~~ | — | **Not yet implemented** — Module 5's field, not Module 3's |
+| `trackAttachmentMode` | enum: `NONE \| SINGLE \| MULTIPLE`, default `NONE` | **Implemented (Module 5).** Drives the submission form's track UI (Section 4, docs/stages/05-submission-management.md) |
 | ~~`minTeamSize`~~ | — | No such field; a team can be admin-only (D25) |
 | `maxTeamSize` | int, default 4 | **Implemented (Module 4, D75).** Admin counts toward the total (D25) |
 | Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`. (`eventClosedAt` not yet implemented — voting's field, no locked stage doc.) |
@@ -176,13 +176,10 @@ multiple members could hold simultaneously.
 
 ## 5. Submissions
 
-**Narrative shape below is the Module 5 target. The live schema has
-only a minimal anchor today** (`id`, `teamId`, `everSubmitted`,
-`createdAt`) **— built ahead of schedule in Module 4 because the team
-roster lock (D26) needs `everSubmitted` to read (D75).** Every other
-field below (`submissionType`, `soloUserId`, `title`, `description`,
-etc.) does not exist in the live schema yet; Module 5 adds them
-additively.
+**Implemented (Module 5).** `teamId`/`everSubmitted`/`createdAt` started
+as a minimal anchor in Module 4, since the team roster lock (D26) needed
+`everSubmitted` to read before this module existed (D75); everything
+else below is this module's own addition.
 
 ### `Submission`
 
@@ -190,15 +187,23 @@ additively.
 |---|---|---|
 | `id`, `eventId` | | |
 | `submissionType` | enum: `SOLO \| TEAM` | |
-| `teamId` | fk → Team, nullable | Populated only when `submissionType = TEAM` |
-| `soloUserId` | fk → User, nullable | Populated only when `submissionType = SOLO` — exactly one of `teamId`/`soloUserId` is set, enforced at the application layer, never both, never neither (D28) |
-| `title` | string | Required to `submit` |
-| `description` | markdown | Required to `submit`; sanitized identically to Event/Track descriptions |
+| `teamId` | fk → Team, nullable, unique | Populated only when `submissionType = TEAM`. Unique — one submission per team, enforced at the DB level; a second creation attempt maps a unique-constraint collision to a 409 (D80) |
+| `soloUserId` | fk → User, nullable | Populated only when `submissionType = SOLO` — exactly one of `teamId`/`soloUserId` is set, enforced at the application layer, never both, never neither (D28). `@@unique([eventId, soloUserId])` — nulls are distinct under Postgres's default semantics, so this only constrains actual solo rows |
+| `title` | string, nullable | Required to `submit` (not at the schema level — a draft can be an empty shell, Section 5.1) |
+| `description` | markdown, nullable | Required to `submit`; sanitized identically to Event/Track descriptions, rendered fresh into `descriptionHtml` at response time, never stored as HTML |
 | `repoUrl`, `demoVideoUrl`, `liveUrl` | string, nullable | Validated for well-formedness only, not reachability |
-| `trackIds` | string[] | Shape works for both `SINGLE` (constrained to length 1 at validation) and `MULTIPLE` modes |
-| `isDraft` | boolean | The only flag distinguishing in-progress from finalized (D30) — toggled freely by `submit`/`unsubmit` |
-| `everSubmitted` | boolean | **Permanent once true.** Set on first successful `submit`, never reset by `unsubmit` (D32). This, not `isDraft`, is what Module 4's team-roster lock (D26) checks. |
-| `submittedAt` | datetime, nullable | Always the **most recent** submit timestamp — overwritten on every resubmit (D31) |
+| `trackIds` | string[], default `[]` | Shape works for both `SINGLE` (constrained to length 1 at validation) and `MULTIPLE` modes. `NONE` rejects any non-empty value outright rather than silently dropping it (D82) |
+| `isDraft` | boolean, default `true` | The only flag distinguishing in-progress from finalized (D30) — toggled freely by `submit`/`unsubmit` |
+| `everSubmitted` | boolean, default `false` | **Permanent once true.** Set on first successful `submit`, never reset by `unsubmit` (D32). This, not `isDraft`, is what Module 4's team-roster lock (D26) checks. |
+| `submittedAt` | datetime, nullable | Always the **most recent** submit timestamp — overwritten on every resubmit (D31); untouched by `unsubmit` |
+
+**Visibility (Section 6), enforced in `SubmissionsService`, not the
+schema:** owner (any team member, or the solo participant) always sees
+their own row, any state. Organizer and siteAdmin see a *submitted* row
+in full, but get the same 404 as "doesn't exist" for a *draft* — no 403
+that would at least confirm one exists (D81). siteAdmin additionally has
+a list-only view of drafts in progress per event (ownership + timestamps
+via an explicit Prisma `select`, never title/description/links).
 
 **Removed from an earlier draft:** `thumbnailUrl`, `SubmissionImage`
 (gallery images), `techTags` (D27) — deliberately descoped for the

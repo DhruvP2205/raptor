@@ -80,6 +80,9 @@ export class EventsService {
         slug,
         description: dto.description ?? null,
         ...(dto.maxTeamSize !== undefined ? { maxTeamSize: dto.maxTeamSize } : {}),
+        ...(dto.trackAttachmentMode !== undefined
+          ? { trackAttachmentMode: dto.trackAttachmentMode }
+          : {}),
         ...timeline,
       },
     });
@@ -139,6 +142,9 @@ export class EventsService {
         ...(dto.slug !== undefined ? { slug: dto.slug } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
         ...(dto.maxTeamSize !== undefined ? { maxTeamSize: dto.maxTeamSize } : {}),
+        ...(dto.trackAttachmentMode !== undefined
+          ? { trackAttachmentMode: dto.trackAttachmentMode }
+          : {}),
         ...timelineUpdates,
       },
     });

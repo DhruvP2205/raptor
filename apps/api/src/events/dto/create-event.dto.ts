@@ -1,4 +1,5 @@
 import {
+  IsEnum,
   IsISO8601,
   IsInt,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { TrackAttachmentMode } from '@prisma/client';
 
 export class CreateEventDto {
   @IsString()
@@ -37,6 +39,14 @@ export class CreateEventDto {
   @Min(1)
   @Max(100)
   maxTeamSize?: number;
+
+  // Module 5's field (Submission Management) — see D75/D80 in
+  // docs/DECISIONS.md for why it lives on CreateEventDto even though
+  // Event itself is Module 3's table, same precedent as maxTeamSize.
+  // Defaults to NONE if omitted.
+  @IsOptional()
+  @IsEnum(TrackAttachmentMode)
+  trackAttachmentMode?: TrackAttachmentMode;
 
   @IsISO8601()
   registrationOpensAt!: string;

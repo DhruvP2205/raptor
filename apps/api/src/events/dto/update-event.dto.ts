@@ -1,4 +1,5 @@
 import {
+  IsEnum,
   IsISO8601,
   IsInt,
   IsOptional,
@@ -9,6 +10,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { TrackAttachmentMode } from '@prisma/client';
 
 // Hand-written rather than PartialType(CreateEventDto) — that helper
 // lives in @nestjs/mapped-types, a package not otherwise needed in
@@ -41,6 +43,10 @@ export class UpdateEventDto {
   @Min(1)
   @Max(100)
   maxTeamSize?: number;
+
+  @IsOptional()
+  @IsEnum(TrackAttachmentMode)
+  trackAttachmentMode?: TrackAttachmentMode;
 
   @IsOptional()
   @IsISO8601()

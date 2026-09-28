@@ -32,6 +32,7 @@ export class TeamsService {
   async createTeam(eventId: string, userId: string, name: string): Promise<Team> {
     await this.assertRegisteredParticipant(eventId, userId);
     await this.assertNotAlreadyOnATeam(eventId, userId);
+    await this.assertNoSoloSubmission(eventId, userId);
 
     const existing = await this.prisma.team.findUnique({
       where: { eventId_name: { eventId, name } },
@@ -87,6 +88,7 @@ export class TeamsService {
     // Requirements from Section 5, all server-side:
     await this.assertRegisteredParticipant(team.eventId, userId);
     await this.assertNotAlreadyOnATeam(team.eventId, userId);
+    await this.assertNoSoloSubmission(team.eventId, userId);
     // "add via join link" is explicitly one of the roster-lock-governed
     // actions (Section 6) — a team that's already submitted can't gain
     // new members either.
@@ -212,6 +214,25 @@ export class TeamsService {
         code: 'ALREADY_ON_A_TEAM',
         message:
           'Leave your current team first before joining or creating a different one for this event.',
+      });
+    }
+  }
+
+  // Module 5's "one participation track per user per event" rule
+  // (docs/stages/05-submission-management.md Section 3), extended back
+  // into Module 4: a user who already has a solo submission for this
+  // event can't create or join a team here either, until they delete
+  // it. The mirror-image check (can't start a solo submission while on
+  // a team) lives in SubmissionsService, not here.
+  private async assertNoSoloSubmission(eventId: string, userId: string): Promise<void> {
+    const existing = await this.prisma.submission.findUnique({
+      where: { eventId_soloUserId: { eventId, soloUserId: userId } },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: 'ALREADY_HAS_SOLO_SUBMISSION',
+        message:
+          'You already have a solo submission for this event — delete it first if you want to join a team instead.',
       });
     }
   }

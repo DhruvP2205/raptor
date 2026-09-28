@@ -55,6 +55,19 @@ describe('TeamsService', () => {
       );
     });
 
+    it('rejects a caller who already has a solo submission for this event', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue(ACCEPTED_PARTICIPANT);
+      prisma.teamMembership.findFirst.mockResolvedValue(null);
+      prisma.submission.findUnique.mockResolvedValue({ id: 'sub-1', soloUserId: 'u1' });
+      const service = new TeamsService(prisma, makeAudit() as any);
+
+      await expect(service.createTeam('event-1', 'u1', 'My Team')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(prisma.team.create).not.toHaveBeenCalled();
+    });
+
     it('rejects a duplicate team name on the same event', async () => {
       const prisma = makePrisma();
       prisma.eventMembership.findUnique.mockResolvedValue(ACCEPTED_PARTICIPANT);
@@ -137,12 +150,30 @@ describe('TeamsService', () => {
       expect(prisma.teamMembership.create).not.toHaveBeenCalled();
     });
 
+    it('rejects a caller who already has a solo submission for this event', async () => {
+      const prisma = makePrisma();
+      prisma.team.findUnique.mockResolvedValue({ id: 'team-1', eventId: 'event-1' });
+      prisma.eventMembership.findUnique.mockResolvedValue(ACCEPTED_PARTICIPANT);
+      prisma.teamMembership.findFirst.mockResolvedValue(null);
+      prisma.submission.findUnique.mockResolvedValue({ id: 'sub-1', soloUserId: 'u1' });
+      const service = new TeamsService(prisma, makeAudit() as any);
+
+      await expect(service.joinTeam('u1', 'team-xmass-482913')).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(prisma.teamMembership.create).not.toHaveBeenCalled();
+    });
+
     it('rejects joining a team whose roster is already locked', async () => {
       const prisma = makePrisma();
       prisma.team.findUnique.mockResolvedValue({ id: 'team-1', eventId: 'event-1' });
       prisma.eventMembership.findUnique.mockResolvedValue(ACCEPTED_PARTICIPANT);
       prisma.teamMembership.findFirst.mockResolvedValue(null);
-      prisma.submission.findUnique.mockResolvedValue({ everSubmitted: true });
+      // No solo submission (keyed by eventId_soloUserId), but the team's
+      // own submission (keyed by teamId) is locked.
+      prisma.submission.findUnique.mockImplementation((args: any) =>
+        args.where.teamId ? Promise.resolve({ everSubmitted: true }) : Promise.resolve(null),
+      );
       const service = new TeamsService(prisma, makeAudit() as any);
 
       await expect(service.joinTeam('u1', 'team-xmass-482913')).rejects.toBeInstanceOf(

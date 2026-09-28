@@ -68,6 +68,7 @@ model User {
 
   adminOfTeams    Team[]           @relation("TeamAdmin")
   teamMemberships TeamMembership[]
+  soloSubmissions Submission[]
 }
 
 model Session {
@@ -93,15 +94,13 @@ enum AccountType {
 }
 
 // Module 2 introduced this as a deliberately minimal anchor (D59); this
-// is now Module 3's (docs/stages/03-event-management.md) full shape.
+// is now Module 3's (docs/stages/03-event-management.md) full shape,
+// with maxTeamSize (Module 4, D75) and trackAttachmentMode (Module 5)
+// added additively on top as each owning module landed.
 //
-// trackAttachmentMode (Module 5) and maxTeamSize (Module 4) are
-// deliberately NOT here yet, even though DATA-MODEL.md's cumulative
-// narrative lists them under "Events" — they belong to the modules that
-// actually consume them, not to this one, per the same additive-growth
-// principle D59 established for Event itself. Same for eventClosedAt:
-// it's used only by voting-round-restart logic (not yet a locked stage
-// doc) and isn't part of Module 3's own validation chain below.
+// eventClosedAt is still deliberately NOT here: it's used only by
+// voting-round-restart logic (not yet a locked stage doc) and isn't
+// part of any currently-implemented module's own validation chain.
 model Event {
   id   String @id @default(uuid())
   name String
@@ -130,6 +129,13 @@ model Event {
   // stated by either module's doc; see D75 in docs/DECISIONS.md.
   maxTeamSize Int @default(4)
 
+  // Module 5's field (Submission Management) — drives which
+  // track-selection UI the submission form shows (Section 4,
+  // docs/stages/05-submission-management.md). Defaults to NONE: an
+  // organizer who never configures tracks gets a form with no track
+  // field at all, rather than a form that silently requires one.
+  trackAttachmentMode TrackAttachmentMode @default(NONE)
+
   // Timeline — all required at creation (Section 3.3's ordering chain
   // can't be validated against a partially-set timeline). UTC.
   registrationOpensAt    DateTime
@@ -150,6 +156,7 @@ model Event {
   tracks      Track[]
   prizes      Prize[]
   teams       Team[]
+  submissions Submission[]
 }
 
 enum EventStatus {
@@ -157,6 +164,12 @@ enum EventStatus {
   PUBLISHED
   ARCHIVED
   DELETED
+}
+
+enum TrackAttachmentMode {
+  NONE
+  SINGLE
+  MULTIPLE
 }
 
 model Track {
@@ -280,7 +293,7 @@ model Team {
   admin       User   @relation("TeamAdmin", fields: [adminUserId], references: [id])
 
   // Join code is `${joinLinkPrefix}-${joinLinkSuffix}`, e.g.
-  // "team-xmass-482913". joinLinkPrefix ("team-" + slugified name) is
+  // "team-xmass-482913". joinLinkPrefix (slugified name alone, D76) is
   // derived once at creation and never changes, since name never
   // changes (Section 4.1). joinLinkSuffix is the actual rotating
   // credential (Section 4.2) — regeneration only ever touches this
@@ -315,25 +328,70 @@ model TeamMembership {
   @@unique([teamId, userId])
 }
 
-// Module 5 — deliberately minimal anchor, same additive-growth pattern
-// already used for Event (D59). Module 4's roster lock (Section 6) is
-// explicitly keyed off `Submission.everSubmitted`, which has to exist
-// for that check to run at all, even though Module 5 (the module that
-// actually creates/submits/unsubmits these rows) isn't built yet — see
-// D76 in docs/DECISIONS.md. Module 5 extends this additively: title,
-// description, repoUrl, demoVideoUrl, liveUrl, trackIds,
-// submissionType, soloUserId, isDraft, submittedAt.
+// Module 5 (Submission Management) — see
+// docs/stages/05-submission-management.md. teamId/everSubmitted started
+// as a deliberately minimal anchor in Module 4 (D75), since Module 4's
+// roster lock (Section 6 there) needs `everSubmitted` to exist before
+// this module's own create/submit/unsubmit logic does. Everything else
+// below is this module's full shape.
 model Submission {
-  id     String @id @default(uuid())
+  id      String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  submissionType SubmissionType
+
+  // Exactly one of teamId/soloUserId is set, never both, never neither
+  // — enforced at the application layer (Section 3), not a DB
+  // constraint, since Postgres has no native "exactly one of these two
+  // columns is non-null" check short of a CHECK constraint this schema
+  // doesn't use elsewhere.
   teamId String? @unique
   team   Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
-  // Set true on first successful submit, never reset — this is Module
-  // 5's field, but Module 4 reads it to decide whether a team's roster
-  // is still changeable. Never written by any code in this module.
+  soloUserId String?
+  soloUser   User?   @relation(fields: [soloUserId], references: [id])
+
+  // Everything below is optional at the row level — a draft can be an
+  // empty shell (Section 5.1). `submit` is what enforces non-empty
+  // required fields, not the schema.
+  title        String?
+  description  String?
+  repoUrl      String?
+  demoVideoUrl String?
+  liveUrl      String?
+
+  // Works for both SINGLE and MULTIPLE trackAttachmentMode with one
+  // shape — SINGLE just constrains the array to length 1 at validation
+  // time (Section 7).
+  trackIds String[] @default([])
+
+  // The only distinction between in-progress and finalized (Section 5)
+  // — no separate draft table.
+  isDraft Boolean @default(true)
+
+  // Always the most recent submit action's timestamp, overwritten on
+  // every resubmit (Section 5.3) — not preserved from the first submit.
+  submittedAt DateTime?
+
+  // Set true on first successful submit, never reset — Module 4's
+  // roster lock (D26) keys off this, not isDraft, so it has to survive
+  // any number of later unsubmit/resubmit cycles.
   everSubmitted Boolean @default(false)
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // NULLs are distinct under Postgres's default unique-index semantics,
+  // so this only constrains actual (eventId, soloUserId) pairs — it
+  // doesn't limit how many TEAM rows (soloUserId always null) an event
+  // can have.
+  @@unique([eventId, soloUserId])
+}
+
+enum SubmissionType {
+  SOLO
+  TEAM
 }
 
 // Append-only. Every privileged or destructive action writes here —

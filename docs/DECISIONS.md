@@ -832,3 +832,55 @@ leaving one path inconsistent would be a silent exception to a
 data-minimization rule with no corresponding benefit, and would get
 worse if this endpoint's behavior ever changed to conditionally set the
 field.
+
+## Submission Management implementation (Module 5, filled in during build)
+
+**D80 — Invented `POST /events/:eventId/submissions`, since the stage
+doc names no creation endpoint at all (Section 5 starts from "PATCH
+/submissions/:id" as if the row already exists).**
+Context: something has to create the first row. Rather than a
+client-supplied choice of SOLO vs. TEAM, the endpoint auto-detects from
+the caller's current team membership for that event — Section 3 already
+treats solo-vs-team as a platform-enforced fact, not something a client
+picks independently of it, so asking the client to also declare it would
+just be a second place that fact could drift from reality. One submission
+per team (DB-unique on `teamId`, same pattern as `Team`'s
+`joinLinkPrefix`+`joinLinkSuffix` collision handling in Module 4) or per
+solo participant (DB-unique on `[eventId, soloUserId]`) — a second
+attempt maps a Prisma P2002 to a 409, never a 500. A parallel `GET
+/events/:eventId/submissions/mine` fetches the caller's own row (any
+state) without the side effect a lazily-creating GET would have.
+
+**D81 — A draft is invisible to organizer *and* admin via direct fetch
+(`GET /submissions/:id`) — both get the same 404, not a 403 that would
+at least confirm a draft exists.**
+Context: Section 6's table draws a real distinction between organizer
+("no access at all") and admin ("list only — ownership, not content"),
+but that distinction lives in which *list* endpoint each can reach
+(there is none for organizers; admin has
+`GET /events/:eventId/submissions/drafts`, returning id/type/owner/
+timestamps via an explicit Prisma `select` that never touches
+title/description/links). For the single-item detail route, Section 8's
+own test bullet ("a direct attempt to fetch a draft's content via any
+admin-facing route is rejected") settles it: admin's detail access is
+exactly as absent as organizer's, so both collapse to the same 404.
+
+**D82 — `trackAttachmentMode: NONE` rejects any submitted track data
+outright, rather than silently dropping it.**
+Context: Section 8 says NONE "ignores/rejects" track data, leaving the
+choice open. Silently ignoring a caller-supplied `trackIds` would mean
+the client's save "succeeds" while quietly doing something other than
+what was asked — the same reasoning this project applies everywhere else
+against silent partial failures. Rejecting with a clear `TRACKS_NOT_ALLOWED`
+error instead surfaces the mismatch (organizer hasn't configured tracks;
+client's form is stale) rather than hiding it.
+
+**D83 — The submission deadline (`now() <= event.submissionsCloseAt`) is
+also checked on `startSubmission` (creation), even though Section 5.4
+only lists `PATCH`/`submit`/`unsubmit` by name.**
+Context: creation isn't literally "a write to a submission" since the
+row doesn't exist yet, so the doc's list doesn't strictly cover it. But
+letting a brand-new, permanently-unsubmittable draft be created after
+the deadline would be a pointless loophole with no legitimate use —
+extended the same server-time-only deadline check to creation for
+consistency with every other write path.
