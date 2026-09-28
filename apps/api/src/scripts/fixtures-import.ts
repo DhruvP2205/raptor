@@ -169,6 +169,7 @@ export interface ImportResult {
   firstParticipantUserId: string;
   firstTeamSubmissionId: string;
   sampleAssignmentId: string | null;
+  sampleSubmissionIdForAudit: string | null;
 }
 
 const DEMO_ORGANIZER_EMAIL = 'demo.organizer@raptor.local';
@@ -466,6 +467,11 @@ export async function importFixtures(
   }
 
   let sampleAssignmentId: string | null = null;
+  // Module 19 (docs/design/19-dogfood-toml.md) — the peer_scores route
+  // is keyed by (submissionId, judgeId), not assignmentId, so both
+  // halves of that pair need to survive out of this loop, not just the
+  // assignment id Module 17 originally needed.
+  let sampleSubmissionIdForAudit: string | null = null;
   const sampleAssignmentJudgeFixtureId = fixtures.judges[0]?.id;
 
   for (const [teamFixtureId, scoresForTeam] of scoresByTeam) {
@@ -530,6 +536,7 @@ export async function importFixtures(
 
       if (s.judge === sampleAssignmentJudgeFixtureId && !sampleAssignmentId) {
         sampleAssignmentId = assignmentId;
+        sampleSubmissionIdForAudit = submissionId;
       }
     }
   }
@@ -542,6 +549,7 @@ export async function importFixtures(
     firstParticipantUserId,
     firstTeamSubmissionId,
     sampleAssignmentId,
+    sampleSubmissionIdForAudit,
   };
 }
 

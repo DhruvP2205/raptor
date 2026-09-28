@@ -93,11 +93,21 @@ async function main(): Promise<number> {
       const suffix = r.headerValue ? (r.reused ? '  [reused from prior run]' : '  [freshly issued]') : '';
       console.log(`${r.role}: ${r.headerValue ?? '<no user found in fixture for this role>'}${suffix}`);
     }
+    // Module 19 (docs/design/19-dogfood-toml.md) — judge_scores/
+    // peer_scores now point at the dedicated (submissionId, judgeId)
+    // audit route, not the old assignment-id-keyed one. Same URL for
+    // both, by design (D170) — the check is which judge's header is
+    // attached, not a different route.
+    const judgeAId = result.judgeUserIds[0];
+    const auditRoute =
+      result.sampleSubmissionIdForAudit && judgeAId
+        ? `/submissions/${result.sampleSubmissionIdForAudit}/judges/${judgeAId}/scores`
+        : '<judge_a has no scored assignment>';
     console.log('\n=== Route values for .dogfood.toml ===');
     console.log(`gallery       = /events/${result.eventId}/submissions`);
     console.log(`submit        = /submissions/${result.firstTeamSubmissionId}/submit`);
-    console.log(`judge_scores  = /assignments/${result.sampleAssignmentId ?? '<judge_a has no scored assignment>'}`);
-    console.log(`peer_scores   = /assignments/${result.sampleAssignmentId ?? '<judge_a has no scored assignment>'}  (same URL — judge_b's header on this route is the check)`);
+    console.log(`judge_scores  = ${auditRoute}`);
+    console.log(`peer_scores   = ${auditRoute}  (same URL — judge_b's header on this route is the check)`);
     console.log(`csv_export    = /events/${result.eventId}/export/submissions.csv`);
 
     return 0;

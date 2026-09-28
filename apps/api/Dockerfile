@@ -1,11 +1,15 @@
 # syntax=docker/dockerfile:1
 #
 # Multi-stage build. Context is the monorepo root (see docker-compose.yml)
-# so pnpm workspace resolution and packages/shared are available.
-#
-# NOTE: unverified against a real `docker build` as of this commit — this
-# environment doesn't have Docker installed. Re-check once Docker is
+# so pnpm workspace resolution and packages/shared + packages/crypto are
 # available.
+#
+# Real `docker build` found a real bug this file's earlier "unverified"
+# note couldn't catch by inspection alone: packages/crypto (Module 6,
+# used by github-tokens.service.ts) was never copied or built here at
+# all, only packages/shared was — `pnpm --filter @raptor/api build`
+# failed with `Cannot find module '@raptor/crypto'`. Fixed by mirroring
+# apps/worker/Dockerfile's already-correct handling of the same package.
 
 FROM node:22-alpine AS base
 # argon2 needs node-gyp build tooling if no prebuilt binary exists for
@@ -24,13 +28,16 @@ COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
-RUN pnpm install --frozen-lockfile --filter @raptor/api... --filter @raptor/shared
+COPY packages/crypto/package.json packages/crypto/package.json
+RUN pnpm install --frozen-lockfile --filter @raptor/api... --filter @raptor/shared --filter @raptor/crypto
 
 FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
+COPY packages/crypto packages/crypto
 COPY apps/api apps/api
 RUN pnpm --filter @raptor/shared build
+RUN pnpm --filter @raptor/crypto build
 RUN pnpm --filter @raptor/api exec prisma generate
 RUN pnpm --filter @raptor/api build
 RUN pnpm deploy --filter @raptor/api --prod /repo/out/api

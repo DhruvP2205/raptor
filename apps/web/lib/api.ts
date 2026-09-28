@@ -103,6 +103,12 @@ async function apiFetch<T>(
   return data as T;
 }
 
+// --- Config (Module 20) ---
+
+export function getPublicConfig() {
+  return apiFetch<{ demoMode: boolean }>('/config/public');
+}
+
 // --- Auth ---
 
 export function signup(input: { email: string; password: string; displayName: string }) {

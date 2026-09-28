@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { RubricCriterion } from '@prisma/client';
+import { AuditService } from '../audit/audit.service';
 import { CalibrationService } from '../calibration/calibration.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { SaveDraftDto } from './dto/save-draft.dto';
@@ -13,7 +14,74 @@ export class ScoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly calibration: CalibrationService,
+    private readonly audit: AuditService,
   ) {}
+
+  // Module 19 (docs/design/19-dogfood-toml.md Section 1) — the
+  // "peer_scores"-shaped route: parameterized by *which judge*, not
+  // implicitly the caller, so an organizer can audit one specific
+  // judge's review of one specific submission (Module 7's
+  // reliability-note workflow, Module 8's progress dashboard) — a
+  // caller-scoped endpoint could never serve that need. Guard, stated
+  // precisely: caller.id === judgeId, OR caller holds ORGANIZER
+  // membership (ACCEPTED) on the submission's event, OR siteAdmin.
+  // Every other caller, INCLUDING A DIFFERENT JUDGE, is refused — this
+  // is the acceptance checker's single most points-costing check if it
+  // fails, so the condition is written out explicitly here rather than
+  // assumed to fall out of "we already do role isolation everywhere".
+  async getForAudit(
+    submissionId: string,
+    judgeId: string,
+    caller: { id: string; siteAdmin: boolean },
+  ) {
+    const assignment = await this.prisma.judgeAssignment.findFirst({
+      where: { submissionId, judgeId },
+      orderBy: { assignedAt: 'desc' },
+    });
+    if (!assignment) {
+      throw new NotFoundException({
+        code: 'ASSIGNMENT_NOT_FOUND',
+        message: 'No such assignment.',
+      });
+    }
+
+    if (caller.id !== judgeId) {
+      if (caller.siteAdmin) {
+        await this.audit.record(caller.id, 'SITE_ADMIN_BYPASS', {
+          route: 'submissions/:submissionId/judges/:judgeId/scores',
+          submissionId,
+          judgeId,
+        });
+      } else {
+        const membership = await this.prisma.eventMembership.findUnique({
+          where: { userId_eventId: { userId: caller.id, eventId: assignment.eventId } },
+        });
+        if (!membership || membership.role !== 'ORGANIZER' || membership.invitationStatus !== 'ACCEPTED') {
+          throw new ForbiddenException({
+            code: 'NOT_ASSIGNMENT_OWNER',
+            message: 'Only the assigned judge or this event\'s organizer can view this.',
+          });
+        }
+      }
+    }
+
+    const [criteria, scores, review] = await Promise.all([
+      this.prisma.rubricCriterion.findMany({ where: { eventId: assignment.eventId } }),
+      this.prisma.score.findMany({ where: { judgeAssignmentId: assignment.id } }),
+      this.prisma.judgeReview.findUnique({ where: { judgeAssignmentId: assignment.id } }),
+    ]);
+    return {
+      assignmentId: assignment.id,
+      judgeId: assignment.judgeId,
+      status: assignment.status,
+      submissionId: assignment.submissionId,
+      criteria,
+      scores,
+      overallFeedback: review?.overallFeedback ?? null,
+      revisionCount: review?.revisionCount ?? 0,
+      submittedAt: review?.submittedAt ?? null,
+    };
+  }
 
   async getForScoring(assignmentId: string, userId: string) {
     const assignment = await this.getOwnedAssignmentOrThrow(assignmentId, userId);

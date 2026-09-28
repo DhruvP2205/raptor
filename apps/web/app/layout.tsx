@@ -1,3 +1,4 @@
+import { DemoBanner } from '@/components/nav/DemoBanner';
 import { SiteNav } from '@/components/nav/SiteNav';
 import { AuthProvider } from '@/lib/auth-context';
 import { ToastProvider } from '@/lib/toast-context';
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <ToastProvider>
             <div className="flex min-h-screen flex-col">
+              <DemoBanner />
               <SiteNav />
               <main className="flex-1">{children}</main>
               <footer className="border-t border-line py-6">

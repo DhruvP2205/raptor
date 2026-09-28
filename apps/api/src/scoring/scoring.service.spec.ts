@@ -5,8 +5,10 @@ function makePrisma() {
   return {
     judgeAssignment: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       update: jest.fn(),
     },
+    eventMembership: { findUnique: jest.fn() },
     rubricCriterion: { findMany: jest.fn().mockResolvedValue([]) },
     score: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn() },
     judgeReview: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn(), update: jest.fn() },
@@ -18,6 +20,10 @@ function makePrisma() {
 
 function makeCalibration() {
   return { recompute: jest.fn() } as any;
+}
+
+function makeAudit() {
+  return { record: jest.fn() } as any;
 }
 
 const ASSIGNMENT = { id: 'assign-1', eventId: 'event-1', judgeId: 'judge-1', submissionId: 'sub-1', completedAt: null };
@@ -32,7 +38,7 @@ describe('ScoringService', () => {
     it('404s for a non-existent assignment', async () => {
       const prisma = makePrisma();
       prisma.judgeAssignment.findUnique.mockResolvedValue(null);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(service.getForScoring('assign-1', 'judge-1')).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -40,9 +46,93 @@ describe('ScoringService', () => {
     it('403s when the caller is not the assigned judge', async () => {
       const prisma = makePrisma();
       prisma.judgeAssignment.findUnique.mockResolvedValue(ASSIGNMENT);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(service.getForScoring('assign-1', 'someone-else')).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  // Module 19 — the peer_scores-shaped audit route
+  // (docs/design/19-dogfood-toml.md Section 1): caller.id === judgeId,
+  // OR ORGANIZER/ACCEPTED on the submission's event, OR siteAdmin.
+  // Every other caller, including a different judge, is refused.
+  describe('getForAudit', () => {
+    it('404s when no assignment exists for this (submissionId, judgeId) pair', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(null);
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
+
+      await expect(
+        service.getForAudit('sub-1', 'judge-1', { id: 'judge-1', siteAdmin: false }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('allows the assigned judge to view their own scores', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(ASSIGNMENT);
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
+
+      const result = await service.getForAudit('sub-1', 'judge-1', { id: 'judge-1', siteAdmin: false });
+
+      expect(result.assignmentId).toBe(ASSIGNMENT.id);
+      expect(prisma.eventMembership.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('refuses a DIFFERENT judge — the actual peer_scores check', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(ASSIGNMENT);
+      prisma.eventMembership.findUnique.mockResolvedValue(null);
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
+
+      await expect(
+        service.getForAudit('sub-1', 'judge-1', { id: 'some-other-judge', siteAdmin: false }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows an ACCEPTED organizer of this event to audit the judge\'s scores', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(ASSIGNMENT);
+      prisma.eventMembership.findUnique.mockResolvedValue({ role: 'ORGANIZER', invitationStatus: 'ACCEPTED' });
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
+
+      const result = await service.getForAudit('sub-1', 'judge-1', { id: 'organizer-1', siteAdmin: false });
+
+      expect(result.assignmentId).toBe(ASSIGNMENT.id);
+    });
+
+    it('refuses a PENDING organizer membership identically to no membership at all', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(ASSIGNMENT);
+      prisma.eventMembership.findUnique.mockResolvedValue({ role: 'ORGANIZER', invitationStatus: 'PENDING' });
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
+
+      await expect(
+        service.getForAudit('sub-1', 'judge-1', { id: 'organizer-1', siteAdmin: false }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('refuses a JUDGE-role member of the same event who isn\'t the assigned judge', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(ASSIGNMENT);
+      prisma.eventMembership.findUnique.mockResolvedValue({ role: 'JUDGE', invitationStatus: 'ACCEPTED' });
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
+
+      await expect(
+        service.getForAudit('sub-1', 'judge-1', { id: 'another-judge', siteAdmin: false }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('allows siteAdmin unconditionally, and audits the bypass', async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findFirst.mockResolvedValue(ASSIGNMENT);
+      const audit = makeAudit();
+      const service = new ScoringService(prisma, makeCalibration(), audit);
+
+      const result = await service.getForAudit('sub-1', 'judge-1', { id: 'admin-1', siteAdmin: true });
+
+      expect(result.assignmentId).toBe(ASSIGNMENT.id);
+      expect(prisma.eventMembership.findUnique).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith('admin-1', 'SITE_ADMIN_BYPASS', expect.anything());
     });
   });
 
@@ -52,7 +142,7 @@ describe('ScoringService', () => {
       prisma.judgeAssignment.findUnique.mockResolvedValue(ASSIGNMENT);
       prisma.event.findUniqueOrThrow.mockResolvedValue(FUTURE_EVENT);
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await service.saveDraft('assign-1', 'judge-1', { scores: [{ criterionId: 'c1', value: 80 }] });
 
@@ -64,7 +154,7 @@ describe('ScoringService', () => {
       const prisma = makePrisma();
       prisma.judgeAssignment.findUnique.mockResolvedValue(ASSIGNMENT);
       prisma.event.findUniqueOrThrow.mockResolvedValue(FUTURE_EVENT);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await service.saveDraft('assign-1', 'judge-1', { overallFeedback: 'still drafting' });
 
@@ -77,7 +167,7 @@ describe('ScoringService', () => {
       prisma.judgeAssignment.findUnique.mockResolvedValue(ASSIGNMENT);
       prisma.event.findUniqueOrThrow.mockResolvedValue(FUTURE_EVENT);
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(
         service.saveDraft('assign-1', 'judge-1', { scores: [{ criterionId: 'c1', value: 150 }] }),
@@ -89,7 +179,7 @@ describe('ScoringService', () => {
       prisma.judgeAssignment.findUnique.mockResolvedValue(ASSIGNMENT);
       prisma.event.findUniqueOrThrow.mockResolvedValue(FUTURE_EVENT);
       prisma.rubricCriterion.findMany.mockResolvedValue([BONUS_CRITERION]);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(
         service.saveDraft('assign-1', 'judge-1', { scores: [{ criterionId: 'c2', value: 20 }] }),
@@ -100,7 +190,7 @@ describe('ScoringService', () => {
       const prisma = makePrisma();
       prisma.judgeAssignment.findUnique.mockResolvedValue(ASSIGNMENT);
       prisma.event.findUniqueOrThrow.mockResolvedValue(PAST_EVENT);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(
         service.saveDraft('assign-1', 'judge-1', { overallFeedback: 'too late' }),
@@ -116,7 +206,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
       prisma.score.findMany.mockResolvedValue([]); // no scores saved
       prisma.judgeReview.findUnique.mockResolvedValue({ overallFeedback: 'feedback', revisionCount: 0 });
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(service.submitReview('assign-1', 'judge-1')).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -128,7 +218,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
       prisma.score.findMany.mockResolvedValue([{ criterionId: 'c1', value: 80 }]);
       prisma.judgeReview.findUnique.mockResolvedValue(null);
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(service.submitReview('assign-1', 'judge-1')).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -140,7 +230,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION, BONUS_CRITERION]);
       prisma.score.findMany.mockResolvedValue([{ criterionId: 'c1', value: 80 }]); // bonus untouched
       prisma.judgeReview.findUnique.mockResolvedValue({ overallFeedback: 'great work', revisionCount: 0 });
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(service.submitReview('assign-1', 'judge-1')).resolves.toBeDefined();
     });
@@ -152,7 +242,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
       prisma.score.findMany.mockResolvedValue([{ criterionId: 'c1', value: 80 }]);
       prisma.judgeReview.findUnique.mockResolvedValue({ overallFeedback: 'great', revisionCount: 0 });
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await service.submitReview('assign-1', 'judge-1');
 
@@ -169,7 +259,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
       prisma.score.findMany.mockResolvedValue([{ criterionId: 'c1', value: 90 }]);
       prisma.judgeReview.findUnique.mockResolvedValue({ overallFeedback: 'revised', revisionCount: 1 });
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await service.submitReview('assign-1', 'judge-1');
 
@@ -184,7 +274,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
       prisma.score.findMany.mockResolvedValue([{ criterionId: 'c1', value: 90 }]);
       prisma.judgeReview.findUnique.mockResolvedValue({ overallFeedback: 'revised', revisionCount: 2 });
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await service.submitReview('assign-1', 'judge-1');
 
@@ -200,7 +290,7 @@ describe('ScoringService', () => {
       prisma.rubricCriterion.findMany.mockResolvedValue([SCORING_CRITERION]);
       prisma.score.findMany.mockResolvedValue([{ criterionId: 'c1', value: 90 }]);
       prisma.judgeReview.findUnique.mockResolvedValue({ overallFeedback: 'revised', revisionCount: 1 });
-      const service = new ScoringService(prisma, makeCalibration());
+      const service = new ScoringService(prisma, makeCalibration(), makeAudit());
 
       await expect(service.submitReview('assign-1', 'judge-1')).rejects.toBeInstanceOf(BadRequestException);
     });

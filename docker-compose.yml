@@ -39,6 +39,19 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     # No `ports:` — unreachable from the host under any configuration.
+    # Real bug found on a cold `docker compose up`: `depends_on:` alone
+    # only waits for this container to *start*, not for Postgres to
+    # actually accept connections — api's first migrate attempt hit
+    # "the database system is starting up" during Postgres's own crash
+    # -recovery replay and crashed, only succeeding on `restart:
+    # unless-stopped`'s automatic retry. A real healthcheck plus
+    # `condition: service_healthy` below closes that race properly
+    # instead of depending on restart-and-hope.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raptor -d raptor"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   redis:
     image: redis:7-alpine
@@ -46,6 +59,11 @@ services:
     networks:
       - data-net
     # No `ports:` — same isolation rule as postgres.
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
 
   api:
     build:
@@ -56,8 +74,16 @@ services:
       - app-net
       - data-net
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     environment:
       NODE_ENV: production
       API_PORT: 4000
@@ -67,6 +93,12 @@ services:
       POSTGRES_PORT: 5432
       REDIS_URL: redis://redis:6379
       PUBLIC_WEB_URL: http://localhost:3000
+      # Module 20 (docs/design/20-demo-environment.md Section 4.1) —
+      # defaults to false (ordinary real-database behavior) if unset.
+      # api and worker MUST read the identical value (Section 4.1's own
+      # warning) — set via `DEMO_MODE=true docker compose up` or a
+      # `.env` file, never hardcoded true here.
+      DEMO_MODE: ${DEMO_MODE:-false}
       # TEST_MODE is intentionally absent here — absence = false.
       # Never set it in this file. See
       # docs/stages/01-auth-and-email-setup.md Section 5.5.
@@ -94,8 +126,10 @@ services:
       - app-net
       - data-net
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     environment:
       NODE_ENV: production
       POSTGRES_USER: raptor
@@ -103,6 +137,10 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       REDIS_URL: redis://redis:6379
+      # Must match `api`'s value exactly (Section 4.1) — Module 14's
+      # background recompute job runs here, and it has to agree with
+      # api on which database is active.
+      DEMO_MODE: ${DEMO_MODE:-false}
     secrets:
       - postgres_password
       - github_token_key
@@ -115,7 +153,8 @@ services:
     networks:
       - app-net
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: http://localhost:4000
