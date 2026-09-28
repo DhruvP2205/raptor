@@ -105,6 +105,131 @@ to `eventStartsAt`, not `registrationOpensAt` or `votingOpensAt` — a
 deliberate choice to block accounts created purely to farm a specific
 vote after the event's real timeline is already underway.
 
+**Bonus guardrail**
+A validation warning (not a hard block) shown to an organizer at event
+creation/edit if the sum of all `BONUS.maxPoints` for the event exceeds
+a threshold (default 20). Exists because the scoring formula's safety —
+bonus can only ever affect close calls, never overturn a real quality
+gap — depends on bonus values staying small relative to the 100-point
+general base; nothing in the math itself prevents an organizer from
+setting an oversized bonus track that reintroduces that exact risk.
+Proceeding past the warning is logged to `AuditLog`, not silently
+allowed.
+
+**Judge calibration profile**
+A judge's platform-wide, live-updating personal scoring tendency
+(`judgeCalibrationMean`, `judgeCalibrationStdDev`,
+`judgeCalibrationSampleCount` on `User`) — computed across every
+`COMPLETED` review that judge has *ever* done, across **all events**,
+not reset per event. This is deliberately different from the
+per-event-scoped design most other judge-related data in this platform
+uses (e.g. `EventMembership`) — calibration is treated as a stable
+personal trait that follows the judge across the whole platform.
+
+**Minimum-N (normalization)**
+The threshold (3, counted platform-wide, not per-event) below which a
+judge's own `judgeCalibrationMean`/`StdDev` are considered
+statistically unreliable. Below this threshold, that judge is
+normalized against the current event's own aggregate baseline instead
+of their own figures — see **event-baseline fallback** below. Distinct
+from the minimum-review-count concepts elsewhere in the platform (e.g.
+reviews-per-submission in Module 7) — this one specifically gates
+whether a judge's *personal* statistics are trustworthy enough to use.
+
+**Event-baseline fallback**
+When a judge is below minimum-N, their z-score is computed against that
+specific event's own mean/stddev (across every judge's `rawTotal` in
+that event) rather than their own unreliable personal mean/stddev. This
+keeps every judge's contribution in the same z-score space regardless of
+how much platform history they individually have, so averaging across a
+mix of experienced and brand-new judges on the same submission stays
+mathematically valid.
+
+**Uniform scoring (flag)**
+A judge whose `judgeCalibrationStdDev` is exactly 0 — they've given
+every project across their history the identical `rawTotal`, meaning
+they carry no differentiating signal. Their z-score is set to 0
+(neutral) rather than excluded, and the situation is explicitly flagged
+for admin/organizer visibility — never silently absorbed into the
+calculation with no trace.
+
+**Normalization run vs. live judge profile — snapshot, not a pointer**
+A `NormalizationRun`'s `NormalizedJudgeScore` rows freeze each judge's
+mean/stddev/sample-count exactly as they stood at the moment that run
+executed. This is a permanent copy, **never a live reference** back to
+`User.judgeCalibration*` — because that live profile keeps changing as
+the judge reviews more projects at *future* events, and a past,
+already-locked event's normalization must never appear to silently
+change just because time passed and the judge judged something else
+later.
+
+**Normalization lock (`resultsAnnounceAt`)**
+Normalization can be triggered and re-triggered freely while
+`judgingClosesAt <= now() < resultsAnnounceAt`, but is **permanently
+and unconditionally locked** the instant `resultsAnnounceAt` passes —
+no admin override, no exception. Same category of protection as an
+already-cast vote or an issued certificate: once results are real and
+public, the computation behind them can't be silently redone. **Not
+the same thing as whether results can be corrected after publish** —
+see Post-publish correction below, which is a separate layer that
+exists precisely because this lock, correctly, allows no exceptions of
+its own.
+
+**Special-award criterion / nomination**
+A third `RubricCriterion` kind (`SPECIAL_AWARD`), alongside `SCORING`
+and `BONUS` — added retroactively to Module 8 after a gap was caught
+during Results & Rankings design. A judge, while reviewing one
+submission, can flag (`Score.value = 1`) whether it deserves a given
+special award (Best Code, Most Unique Feature, etc.). Never part of the
+`generalRaw`/`bonusRaw`/`rawTotal` scoring formula — tallied entirely
+separately at results time. The winner is whichever submission
+accumulates the most nomination flags across every judge who reviewed
+it. **Tie-break, deliberately different order from the rank-prize
+cascade: nomination count → `bonusRaw` → `NormalizedScore.finalScore`
+→ share.** Limitation, stated plainly: a judge can only nominate from
+submissions they personally reviewed, not the full event-wide pool.
+
+**Dense ranking**
+The ranking style this platform uses for rank-based prizes: after a
+tied position, the next distinct score takes the **next sequential**
+rank number, never a skipped one. Two submissions tied for 2nd means
+the next submission is ranked 3rd, not 4th. Explicitly not "Olympic"
+/skip-ranking, which would have made that next submission 4th.
+
+**Rank tie-break cascade → share, never escalate**
+`NormalizedScore.finalScore` → pre-normalization `averageRawTotal` →
+`bonusRaw` → if still tied, **share the position and its prize
+together.** Unlike some other tie-handling in this platform, this
+resolution is fully automatic end-to-end — there's no manual-review
+escalation step for a rank tie the way there might be for, say, a
+disputed vote count. **Not the same cascade order as special-award
+ties** — see the entry below, which checks bonus *before* the final
+score, the reverse of this one.
+
+**`PublishedResultVersion` — versioned, never edited in place**
+Every publish, and every later correction, produces a new version
+(`versionNumber` increments); the previous one is marked `SUPERSEDED`,
+never deleted or mutated. Only one version is ever `LIVE`
+(participant-visible) at a time per event.
+
+**Post-publish correction**
+A deliberate, heavily-audited action an organizer/admin can take
+*after* results are already live — disqualify a submission, manually
+reorder rank, or explicitly override a displayed score. Always requires
+a written reason, always produces a new `PublishedResultVersion` rather
+than editing the live one, always visibly marked as a correction (never
+indistinguishable from an original result). **Does not reopen
+normalization** — see Normalization lock above; this is a separate
+override sitting on top of an already-frozen computation, not a way
+around the lock.
+
+**Results visibility gate vs. `EventPhase`**
+Two independent things, easy to conflate: `EventPhase` reaching
+`RESULTS_ANNOUNCED` is purely timestamp-computed (Module 3) and happens
+regardless of organizer action. What participants actually *see* is
+gated by whether a `PublishedResultVersion` exists at `status: LIVE` —
+a phase transition alone reveals nothing.
+
 **Guard** (technical)
 A NestJS authorization check that runs before a route handler executes,
 resolving the relevant resource's ID from the request path and checking
@@ -112,3 +237,136 @@ the current user's scoped permission for that specific resource — never
 a global role check. The only authorization mechanism in the codebase;
 there is no parallel frontend-only check anywhere that substitutes for
 this.
+
+**Non-responding judge exclusion**
+When computing a submission's `averageRawTotal` (see the `generalRaw` /
+`bonusRaw` / `rawTotal` / `averageRawTotal` / `finalScore` entry above),
+any assigned judge whose `JudgeAssignment.status` is not `COMPLETED` is
+excluded entirely from both the sum and the divisor — never counted as a
+zero, never counted at all. A project assigned to 3 judges where only 2
+complete their review has its `rawTotal` values averaged across exactly
+those 2, before the single final scale conversion — not 3 values with
+one implicit zero dragging it down.
+
+**checkStatus vs. finalDecision** (Submission Verification)
+Two separate fields on `SubmissionVerification`, easy to conflate but
+answering different questions:
+- **`checkStatus`** — what the *automated* check found (or why it
+  couldn't run): `NOT_RUN | VERIFIED | SUSPICIOUS | REJECTED | PRIVATE |
+  NON_GITHUB | ERROR`. This is a machine-generated observation.
+- **`finalDecision`** — what actually gates judge assignment:
+  `PENDING_REVIEW | APPROVED | DISQUALIFIED`. Only `VERIFIED` maps
+  automatically to `APPROVED`; every other `checkStatus` requires an
+  explicit human decision to resolve. A submission can have
+  `checkStatus: REJECTED` and still not be `DISQUALIFIED` — the strong
+  automated signal alone never excludes a team from judging without a
+  human confirming it.
+
+**Hashed vs. encrypted** (secret storage)
+Two different treatments for sensitive values in this system, chosen
+based on whether the plaintext ever needs to be read back:
+- **Hashed** (one-way, compare-only) — sessions, email-verification
+  tokens, invitation tokens. The system only ever needs to check "does
+  this match," never "what was the original value."
+- **Encrypted** (reversible, AES-256-GCM) — GitHub tokens only, as of
+  this writing. The system must retrieve the actual plaintext to place
+  an API call with it. This is a deliberate, narrow exception to the
+  hash-everything default, not a general-purpose alternative pattern —
+  don't reach for reversible encryption for a new secret without a
+  specific, documented reason the plaintext must be recoverable.
+
+**Judge reliability note** (`JudgeReliabilityNote`)
+A written remark attached to a judge's **`User` profile** (not to any
+one event) after a no-show or transferred assignment. Platform-wide,
+visible to any organizer/admin considering that judge for a *future*
+event — never visible to the judge themselves, never visible to any
+participant. Distinct from an event-scoped audit-log entry precisely
+because its purpose is to travel with the judge across events, not stay
+local to the incident.
+
+**Assignment transfer vs. assignment completion lock**
+A `JudgeAssignment` can be manually transferred to a different judge
+only while it is still `PENDING`/`IN_PROGRESS` (no score submitted yet).
+The instant a score is actually submitted, that specific assignment
+becomes permanently locked to the judge who submitted it — no transfer,
+by anyone, ever, after that point. "Reassignable" and "completed" are
+mutually exclusive states, never both true at once.
+
+**Resubmit — two different meanings depending on context**
+- **Submission resubmit** (Module 5): a participant/team unsubmits (back
+  to draft) and submits again. `everSubmitted` stays permanently `true`
+  regardless; `submittedAt` updates to the latest submission.
+- **Score resubmit** (Module 8): a judge calls `submit-review` again on
+  an already-`COMPLETED` assignment, any number of times, up until
+  `judgingClosesAt`. Unlike a submission resubmit, there is no separate
+  "unlock" step — a completed assignment is directly re-submittable by
+  its own judge. Each resubmit appends a new `ScoreRevision` snapshot;
+  none are ever overwritten or deleted.
+Both are governed by very different rules (team-roster locking vs.
+judge-content editability) — don't assume one module's resubmit
+semantics apply to the other.
+
+**Scoring criterion vs. bonus track**
+Two kinds of `RubricCriterion`, distinguished by `kind`:
+- **`SCORING`** — required, weighted (`weightPercent`, summing to
+  exactly 100 across an event), judge input **0–100 per criterion**
+  (D81). These are what "the rubric" usually refers to.
+- **`BONUS`** — optional, flat point value (`maxPoints`, e.g. +5, +10,
+  no sum constraint), scored 0 to `maxPoints`. An event can have zero
+  bonus tracks.
+
+**Judge input scale vs. display/winning scale — never the same number**
+Two completely independent scales, easy to conflate:
+- **Judge input scale** — fixed at 0–100 for `SCORING` criteria (D81),
+  and 0–`maxPoints` for `BONUS` criteria. This is what a judge actually
+  types in while reviewing one criterion of one project.
+- **Display/winning scale** (`Event.finalScoreDisplayScale`) —
+  organizer-configured per event (default 5), what a submission's final,
+  publicly-shown score is expressed on. A judge never sees or interacts
+  with this number while scoring; it only appears at the very last step,
+  when a submission's averaged result is converted for display.
+
+**generalRaw / bonusRaw / rawTotal / averageRawTotal / finalScore**
+The full chain of the finalized scoring formula (D82), each stage
+computed in this exact order — skipping or reordering any step
+reproduces one of the two formula bugs found and rejected during design:
+1. **`generalRaw`** (per judge) — the weighted sum of `SCORING`
+   criteria, divided by 100 once. Lands in `[0, 100]`. **Must not be
+   divided down further or shrunk to a smaller scale before the next
+   step** — doing so was the specific mistake that let a low-quality
+   project with bonus outscore a high-quality project without it.
+2. **`bonusRaw`** (per judge) — sum of awarded bonus points, still in
+   raw point units, not yet scaled.
+3. **`rawTotal`** (per judge) — `generalRaw + bonusRaw`, computed while
+   both are still in the same raw, undivided units.
+4. **`averageRawTotal`** — the average of `rawTotal` across judges with
+   `JudgeAssignment.status: COMPLETED` only (non-responding judges
+   excluded entirely — see next entry). Division by 100 has *still* not
+   happened yet at this point.
+5. **`finalScore`** — `(averageRawTotal / 100) × finalScoreDisplayScale`.
+   The **only** point in the entire pipeline where scaling to the
+   display scale occurs. If `averageRawTotal > 100`, `finalScore`
+   exceeds `finalScoreDisplayScale` — see **Overflow / Overachiever**
+   below.
+
+**Overflow / "Overachiever"**
+When a submission's `averageRawTotal` exceeds 100 (possible whenever
+enough judges award enough bonus), `finalScore` exceeds
+`finalScoreDisplayScale` — e.g. `5.34 / 5`. This is displayed as-is,
+never clamped down to the scale's maximum, with a fixed "Overachiever"
+label in the public gallery. **Checked at the averaged submission level,
+not per individual judge** — one generous judge alone does not trigger
+this if the cross-judge average stays at or under 100. Never shown on
+certificates, which carry no score at all (see the certificate payload
+entry above).
+
+**Bonus guardrail**
+A validation warning (not a hard block) shown to an organizer at event
+creation/edit if the sum of all `BONUS.maxPoints` for the event exceeds
+a threshold (default 20). Exists because the scoring formula's safety —
+bonus can only ever affect close calls, never overturn a real quality
+gap — depends on bonus values staying small relative to the 100-point
+general base; nothing in the math itself prevents an organizer from
+setting an oversized bonus track that reintroduces that exact risk.
+Proceeding past the warning is logged to `AuditLog`, not silently
+allowed.

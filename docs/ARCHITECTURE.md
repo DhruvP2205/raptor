@@ -36,6 +36,8 @@ implies.
 | API docs | `@nestjs/swagger` | Generates OpenAPI directly from the same decorators used for request validation — one source of truth, feeds the API-First bonus |
 | SVG→PDF (certificates) | Pure-JS conversion (e.g. `svg-to-pdfkit`) | No headless-browser dependency — keeps the image light and laptop-friendly |
 | CAPTCHA / abuse resistance | Self-built (visible fallback + invisible proof-of-work) | No third-party service call, satisfies the no-hosted-dependency rule |
+| Background jobs | BullMQ on Redis, separate `worker` container | Introduced in Module 6 — GitHub API calls during submission verification cannot run synchronously in the API's request thread without degrading responsiveness for other users; shared later by certificate rendering |
+| Secret storage requiring reversible decryption (GitHub tokens) | AES-256-GCM, key via Docker secrets | The one deliberate exception to the platform's hash-everything pattern — a GitHub PAT must be read back in plaintext to call the API, unlike session/verification/invitation tokens which are compare-only |
 
 ---
 
@@ -45,9 +47,13 @@ implies.
 dogfood/
 ├── apps/
 │   ├── api/          NestJS backend
-│   └── web/           Next.js frontend
+│   ├── web/           Next.js frontend
+│   └── worker/         BullMQ background-job container (Module 6)
 ├── packages/
-│   └── shared/         Types/DTOs shared between api and web
+│   ├── shared/         Types/DTOs shared between api and web
+│   └── crypto/         GitHub-token AES-256-GCM helpers, shared between
+│                        api and worker only (Module 6) — kept out of
+│                        shared/ so that package stays browser-safe
 ├── infra/              Docker-related config, seed fixtures
 ├── tests/              Acceptance suite (tier-by-tier, runs against a live instance)
 ├── docs/
@@ -60,15 +66,23 @@ dogfood/
 └── CLAUDE.md
 ```
 
+Note: `stages/` actually lives at the repo root (`stages/NN-*.md`), not
+under `docs/` — this diagram groups it with the other narrative docs for
+readability, but see CLAUDE.md's own "Where things are" section for the
+authoritative path.
+
 `packages/shared` exists specifically to prevent the frontend's idea of a
 domain object (e.g. `Submission`) from silently drifting from what the
-backend actually returns — both sides import the same type.
+backend actually returns — both sides import the same type. `packages/
+crypto` exists for the same drift-prevention reason, scoped to just the
+one piece of logic `api` and `worker` must compute identically (Section
+2's tech-stack table, GitHub token encryption).
 
 ---
 
 ## 4. Service topology & network segmentation
 
-Four containers, on two deliberately separated Docker networks:
+Five containers, on two deliberately separated Docker networks:
 
 ```
                  host-published ports
@@ -77,7 +91,9 @@ Four containers, on two deliberately separated Docker networks:
         │                                 │
      web (Next.js)                    api (NestJS)
         │                                 │
-        └──────────── app-net ────────────┘
+        └──────────── app-net ────────────┤
+                                           │
+                                      worker (BullMQ) ── shares app-net + data-net
                                            │
                                       data-net
                                            │
@@ -88,14 +104,22 @@ Four containers, on two deliberately separated Docker networks:
 - **`data-net`** — Postgres and Redis only. **No `ports:` mapping to the
   host at all** — neither is reachable from outside the Docker network
   under any circumstance, regardless of host firewall configuration.
-- **`app-net`** — `api` and `web`.
-- **`api` sits on both networks** (it's the only thing that needs to talk
-  to the database directly). **`web` sits only on `app-net`** — it talks
-  to `api`, never to Postgres/Redis directly. A compromised frontend
-  container has no network path to the database at all.
+- **`app-net`** — `api`, `web`, and `worker`.
+- **`api` and `worker` both sit on `data-net` and `app-net`** (both need
+  to talk to Postgres/Redis directly). **`web` sits only on `app-net`**
+  — it talks to `api`, never to Postgres/Redis directly. A compromised
+  frontend container has no network path to the database at all.
 - This mirrors the same isolation principle applied at the application
   layer (Module 2's guards) — just enforced one layer down, at
   infrastructure.
+
+**The `worker` container** runs BullMQ against Redis, handling
+background jobs that must never run synchronously in the API's request
+thread — introduced in Module 6 (Submission Verification) for GitHub
+API calls, and shared by certificate rendering once that module is
+formalized. Two independent queues, one container: neither job type can
+block the other, and neither ever competes with the main API process for
+CPU/latency during a request.
 
 **No mail-catcher container.** Considered and explicitly rejected (see
 `DECISIONS.md`) — SMTP is provider-agnostic and configured via Docker
@@ -154,6 +178,12 @@ templates with placeholder values and inline comments.
   low-entropy values at rest (currently just `Session.ipHash`; see D58).
   Not required — if absent, the app leaves `ipHash` null rather than
   hash it with no key.
+- **The GitHub-token encryption key** (Module 6) is read by *both* `api`
+  and `worker` independently, unlike every other secret in this list —
+  `api` encrypts a token on admin entry (`POST /admin/github-tokens`),
+  `worker` decrypts it right before the one GitHub API call that needs
+  the plaintext. Both containers mount the same `github_token_key`
+  secret; there is no cross-process handoff of the decrypted value.
 
 ---
 
@@ -207,19 +237,22 @@ vs. where the clock currently sits) before being modeled as one enum.
 ## 8. Deferred/not-yet-designed subsystems
 
 Documented here so it's clear what's intentionally not architected yet,
-rather than accidentally forgotten:
+rather than accidentally forgotten. Note the distinction from "not yet
+implemented": Modules 6-10 (Submission Verification through Results &
+Rankings) all have locked stage docs now — they belong in the module
+list, not this one, once implementation starts. What's actually listed
+here still has **no stage doc at all**:
 
 - The shareable, not-yet-bound judge invitation link (Section 3.2 of
   Module 2's stage doc, bullet 2) — direct-add by known email is
   implemented; the generic link variant has no resolved data model yet
   (D64). Revisit before claiming Module 2 fully done.
-- Judge assignment & scoring (Module 7+)
-- Normalization
 - Voting (rounds, anti-abuse, shortlist) — heavily discussed in
   conversation, not yet written as a stage doc
-- Certificates — heavily discussed, not yet written as a stage doc
+- Certificates — heavily discussed, not yet written as a stage doc, will
+  reuse the `worker` container introduced in Module 6
 - REST API/webhooks, bulk import/export, pairwise judging mode,
   normalization proof, threat model doc, OpenAPI publication
 
-Each will get its own `docs/stages/NN-name.md` following the same format
-as Modules 1-5 before any code is written against it.
+Each will get its own `stages/NN-name.md` following the same format as
+every module locked so far before any code is written against it.

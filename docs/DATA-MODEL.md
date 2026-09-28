@@ -17,12 +17,17 @@ added `trackAttachmentMode` (D75-equivalent pattern, same commit).
 `Submission` started as a minimal anchor in Module 4 — `id`, `teamId`,
 `everSubmitted`, `createdAt` (D75) — and Module 5 extended it additively
 to the full shape below, per its own scope. `eventClosedAt` is still
-deliberately absent (voting, no locked stage doc yet). If the live
-schema and a field documented here disagree **and the owning module has
-already been implemented**, that's a bug. Certificates and voting are
-discussed extensively in `DECISIONS.md` but don't have a finalized stage
-doc yet, so their tables are sketched here as forward-looking and may
-still shift.
+deliberately absent (voting, no locked stage doc yet). **Modules 6-10
+(Submission Verification through Results & Rankings) have locked stage
+docs as of this update but are not yet implemented** — §6-10 below
+describe their target schema; nothing there exists in the live schema
+yet. Module 8 additively requires one new field on the already
+-implemented `Event` table, `judgingClosesAt` (§3) — everything else in
+§6-10 is entirely new tables. If the live schema and a field documented
+here disagree **and the owning module has already been implemented**,
+that's a bug. Certificates and voting are discussed extensively in
+`DECISIONS.md` but don't have a finalized stage doc yet, so their tables
+are sketched here as forward-looking and may still shift.
 
 ---
 
@@ -88,15 +93,16 @@ is ever consulted for event-scoped actions.
 
 ### `Event`
 
-**Implemented (Module 3).** `trackAttachmentMode` (Module 4) and
-`maxTeamSize` (Module 5) are **not** in the Prisma schema yet — they
-belong to the modules that actually consume them, same additive-growth
-principle as `Event` itself (D59). `eventClosedAt` is also absent — it's
-only used by voting-round-restart logic, which has no locked stage doc
-yet. `phase` adds a synthetic `NOT_STARTED` value (D69) for a PUBLISHED
-event sitting before `registrationOpensAt`, not named in the stage
-doc's own phase list but required by its explicit "early hype, before
-registration opens" supported use case (Section 8).
+**Implemented (Module 3), grown additively by later modules** — same
+principle as `Event` itself starting as a minimal anchor (D59):
+`maxTeamSize` arrived with Module 4 (D75), `trackAttachmentMode` with
+Module 5. `eventClosedAt` is still absent — it's only used by
+voting-round-restart logic, which has no locked stage doc yet.
+`judgingClosesAt` will arrive with Module 8 (not yet implemented — see
+the table row below). `phase` adds a synthetic `NOT_STARTED` value
+(D69) for a PUBLISHED event sitting before `registrationOpensAt`, not
+named in the stage doc's own phase list but required by its explicit
+"early hype, before registration opens" supported use case (Section 8).
 
 | Field | Type | Notes |
 |---|---|---|
@@ -108,7 +114,8 @@ registration opens" supported use case (Section 8).
 | ~~`minTeamSize`~~ | — | No such field; a team can be admin-only (D25) |
 | `maxTeamSize` | int, default 4 | **Implemented (Module 4, D75).** Admin counts toward the total (D25) |
 | Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`. (`eventClosedAt` not yet implemented — voting's field, no locked stage doc.) |
-| *(computed, not stored)* `phase` | `EventPhase \| null` | Derived from `now()` vs. the timeline fields on every read (D15); `null` for non-PUBLISHED, `NOT_STARTED` for PUBLISHED-but-pre-registration (D69) |
+| `judgingClosesAt` | timestamptz, UTC | **Not yet implemented** — Module 8's field (§8 below). Once built, sits between `eventEndsAt` and `resultsAnnounceAt` in the ordering chain; Module 3's own code (`event-timeline.ts`, `event-phase.ts`) needs updating to add it and the new `JUDGING_CLOSED` phase — this is the one place a later module amends an earlier, already-shipped one, per Module 8 Section 10. |
+| *(computed, not stored)* `phase` | `EventPhase \| null` | Derived from `now()` vs. the timeline fields on every read (D15); `null` for non-PUBLISHED, `NOT_STARTED` for PUBLISHED-but-pre-registration (D69). Does not yet include `JUDGING_CLOSED` — arrives with Module 8. |
 
 **Validation, enforced on every create and every edit** — see
 `apps/api/src/events/utils/event-timeline.ts`:
@@ -120,7 +127,9 @@ registrationOpensAt < registrationClosesAt <= eventStartsAt
 ```
 PUBLISHED adds two more rules per field: immutable once its own
 boundary has passed, and never movable earlier than its current value
-while still pending.
+while still pending. **This chain is what Module 8 will change** to
+`... <= eventEndsAt < judgingClosesAt <= resultsAnnounceAt < ...` —
+not yet done, since Module 8 isn't implemented yet.
 
 ### `Track`
 
@@ -219,7 +228,291 @@ custom-questions module is designed.
 
 ---
 
-## 6. Certificates (forward-looking — not yet a finalized stage doc)
+## 6. Submission Verification (Module 6)
+
+### `SubmissionVerification`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `submissionId` (unique) | | |
+| `checkStatus` | enum: `NOT_RUN \| VERIFIED \| SUSPICIOUS \| REJECTED \| PRIVATE \| NON_GITHUB \| ERROR` | Machine-generated observation |
+| `finalDecision` | enum: `PENDING_REVIEW \| APPROVED \| DISQUALIFIED` | What actually gates judge assignment — only `APPROVED` proceeds |
+| `firstCommitAt`, `lastCommitAt` | datetime, nullable | UTC, normalized from GitHub's response regardless of the offset GitHub returns |
+| `totalCommits`, `commitsInWindow` | int | Window is `eventStartsAt` → `submissionsCloseAt` |
+| `outsideWindowCommits` | json | Full sha/timestamp/message/author detail for organizer review |
+| `finalDecisionRemarks` | text, nullable | Mandatory when `finalDecision = DISQUALIFIED` |
+| `reviewedByUserId` | fk, nullable | |
+| `checkedAt`, `reviewedAt` | datetime, nullable | |
+
+### `GithubToken`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `label` | | |
+| `tokenEncrypted` | string | **AES-256-GCM — the one deliberate exception to this schema's hash-everything-sensitive default**, since the plaintext must be recoverable to call the GitHub API |
+| `isValid`, `rateLimitRemaining`, `rateLimitResetAt`, `lastUsedAt`, `revokedAt` | | Drives rotation logic — a valid token with the most remaining headroom is selected per call |
+
+---
+
+## 7. Judge Assignment (Module 7)
+
+### `JudgeAssignment`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `eventId` | | |
+| `judgeId` | fk → User | |
+| `submissionId` | fk → Submission | Must have `finalDecision: APPROVED` — enforced at assignment time, not merely assumed |
+| `status` | enum: `PENDING \| IN_PROGRESS \| COMPLETED \| TRANSFERRED` | **`COMPLETED` is permanent** — no transfer possible after a score is actually submitted, by anyone |
+| `assignmentMethod` | enum: `MANUAL \| ALGORITHMIC` | Audit/provenance only — no behavioral difference downstream |
+| `transferredFromAssignmentId` | fk, nullable | Links a replacement assignment back to the `TRANSFERRED` row it replaced |
+| `assignedAt`, `completedAt` | datetime | |
+
+### `JudgeReliabilityNote`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `judgeUserId` | fk → **User**, not `EventMembership` | Deliberately platform-wide, not event-scoped — the point is to inform *future* invite decisions on other events |
+| `eventId` | fk → Event | Context only (which event the incident happened during) |
+| `authorUserId` | fk → User | |
+| `remark` | text | |
+
+**Never visible to the judge it's about, and never visible to any
+participant** — organizer/admin-only, everywhere it's surfaced.
+
+### `Event` / `EventMembership` extensions
+
+- `Event.maxProjectsPerJudge: Int` — event-wide default cap.
+- `EventMembership.projectLimitOverride: Int?` — per-judge override,
+  set explicitly when a manual assignment would otherwise exceed the
+  default.
+
+**Participant-facing anonymity:** no participant-facing endpoint,
+export, or certificate at any pipeline stage includes judge identity, at
+any point in this schema — this is enforced by simply never including a
+judge-identifying field in any participant-scoped query or DTO, rather
+than by a field-level access-control check that could be gotten wrong.
+
+---
+
+## 8. Rubric & Scoring (Module 8)
+
+### `RubricCriterion` (now fully specified)
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `eventId` | | |
+| `kind` | enum: `SCORING \| BONUS \| SPECIAL_AWARD` | Three independent kinds — `SPECIAL_AWARD` added retroactively (D129), see Module 8 doc Section 2.3 |
+| `label`, `description` | string, text | `description` is judge-facing guidance |
+| `weightPercent` | int, nullable | **`SCORING` only** — must sum to exactly 100 across an event's `SCORING` criteria |
+| `maxPoints` | int, nullable | **`BONUS` only** — flat point value, no sum requirement |
+
+**Judge input scale: `SCORING` criteria take a raw 0–100 value
+(D118 — supersedes the earlier fixed 1–5 design). `BONUS` criteria take
+0 to their own `maxPoints`. `SPECIAL_AWARD` criteria take 0 or 1** — a
+nomination flag, never part of the `generalRaw`/`bonusRaw`/`rawTotal`
+formula, tallied entirely separately at results-computation time
+(Module 10). The organizer-configured winning/display scale
+(`Event.finalScoreDisplayScale`) is a completely separate number —
+never conflate a judge's raw input scale with the scale a result is
+ultimately displayed on.
+
+### `Score`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `judgeAssignmentId`, `criterionId` | | |
+| `value` | int | 0–100 for `SCORING`; 0 to `maxPoints` for `BONUS`; 0 or 1 for `SPECIAL_AWARD`. Live, mutable by the assigning judge until `event.judgingClosesAt` |
+| `note` | text, nullable | Optional per-criterion note |
+
+### `JudgeReview`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `judgeAssignmentId` (unique) | | |
+| `overallFeedback` | text | Required to complete a review — justification in the judge's own words |
+| `submittedAt` | datetime | Most recent submit/resubmit — same "most recent, not original" pattern as `Submission.submittedAt` (D31) |
+| `revisionCount` | int | |
+
+### `ScoreRevision` — append-only, never edited or deleted
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `judgeAssignmentId`, `revisionNumber` | | |
+| `scoresSnapshotJson` | json | Full snapshot of every criterion's value+note (both kinds) at this submission |
+| `overallFeedbackSnapshot` | text | |
+| `submittedAt` | datetime | |
+
+Written on every successful `submit-review` call (first submit and every
+resubmit) — never on a draft save. This is the permanent record of how a
+judge's scoring evolved, independent of the live, mutable `Score` rows.
+
+### `Event` extension
+
+- `judgingClosesAt: DateTime` — explicit judging deadline.
+- `finalScoreDisplayScale: Int` — organizer-configured, default `5`.
+- No stored field for the bonus guardrail below — it's a validation-time
+  check plus an `AuditLog` entry on override, not a persisted setting.
+
+### Final score computation — finalized formula (D118, D119)
+
+**Per judge — combine while still in raw, undivided units:**
+```
+generalRaw (per judge) = Σ(criterionValue × weightPercent) / 100   → [0, 100]
+bonusRaw (per judge)    = Σ(awarded points across enabled bonus tracks)
+rawTotal (per judge)    = generalRaw + bonusRaw
+```
+
+**Across judges — average the raw totals first, excluding
+non-responders (D116), then scale exactly once:**
+```
+averageRawTotal = average of rawTotal across judges with
+                   JudgeAssignment.status = COMPLETED only
+finalScore = (averageRawTotal / 100) × Event.finalScoreDisplayScale
+```
+
+**Overflow** (`averageRawTotal > 100`, i.e. `finalScore >
+finalScoreDisplayScale`) is expected and honest, not an error — shown
+as the raw number plus a fixed "Overachiever" label in the public
+gallery, never on certificates. The overflow check applies to the
+*averaged* submission-level score, not any individual judge's score —
+one generous judge alone doesn't trigger it if the cross-judge average
+stays at or under 100.
+
+**Rejected variant, recorded for posterity:** dividing `generalRaw` down
+to a small scale *before* adding bonus (rather than after) was tried and
+proven broken during design — it lets a low-quality project with full
+bonus outscore a high-quality project with none, since bonus then
+becomes disproportionately large next to an already-shrunk general
+score. The fix is strict: combine general and bonus while both remain in
+the same full-size raw units; divide only once, at the very end.
+
+**Bonus guardrail:** if the sum of an event's `BONUS.maxPoints` exceeds
+a threshold (default 20, i.e. 20% of the 100-point general base), the
+organizer sees a warning before publishing and can proceed only with an
+explicit acknowledgment, written to `AuditLog`. Soft warning, not a hard
+block, by deliberate design choice.
+
+**Two independent forms of immutability, not to be confused:** the
+*assignment* is permanently locked to its judge once any score is
+submitted (Module 7, D106 — no transfer, ever, after that point), while
+the *content* of that same judge's scores remains editable by them until
+`judgingClosesAt`. Both are true of the same row simultaneously.
+
+---
+
+## 9. Normalization (Module 9)
+
+### `User` extension
+
+| Field | Type | Notes |
+|---|---|---|
+| `judgeCalibrationMean`, `judgeCalibrationStdDev` | float | Live, recomputed after every `submit-review`, across **every event** that judge has ever reviewed — not scoped to one event |
+| `judgeCalibrationSampleCount` | int | Checked against the minimum-N threshold (3, platform-wide) |
+
+### `NormalizationRun`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `eventId`, `runByUserId`, `runAt` | | |
+| `method` | enum | `Z_SCORE` |
+| `minimumN` | int | Stored per-run (default 3) |
+| `eventMean`, `eventStdDev` | float | This event's own aggregate baseline at run time — used as the fallback for judges below minimum-N (D124) |
+
+### `NormalizedJudgeScore` — permanent snapshot, one per judge per run
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `normalizationRunId`, `judgeAssignmentId` | | |
+| `rawTotal` | float | Input value at run time |
+| `judgeMeanAtRun`, `judgeStdDevAtRun`, `sampleCountAtRun` | | **Frozen copies — never a live reference to `User.judgeCalibration*`** (D127) |
+| `usedFallback` | boolean | True if this judge was below minimum-N (D124) |
+| `uniformScoringFlagged` | boolean | True if `judgeStdDevAtRun = 0` (D125) |
+| `zScore` | float | |
+
+### `NormalizedScore` — one per submission per run
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `normalizationRunId`, `submissionId` | | |
+| `averagedZScore` | float | Averaged across `COMPLETED` judges only (same D116 exclusion) |
+| `rescaledValue` | float | Linear rescale of the run's full set of averaged z-scores onto 0–100 |
+| `finalScore` | float | `(rescaledValue / 100) × Event.finalScoreDisplayScale` — reuses Module 8's exact final step |
+| `rank` | int | |
+
+**Trigger and lock:** manual only, re-runnable any number of times
+while `judgingClosesAt <= now() < resultsAnnounceAt`. **Permanently
+locked once `resultsAnnounceAt` passes — no exceptions, no admin
+override** (D126), consistent with how cast votes, issued certificates,
+and finalized team rosters are protected elsewhere in this schema.
+
+**Blending fix (D124):** a judge below minimum-N is normalized against
+this run's `eventMean`/`eventStdDev` rather than their own unreliable
+personal figures — keeps every judge's contribution in the same
+z-score space so cross-judge averaging on a submission stays valid.
+
+**Visibility (D128):** both live `User.judgeCalibration*` and any run's
+frozen `NormalizedJudgeScore` snapshot are visible to admin/organizer,
+platform-wide — never to the judge themselves or to any participant.
+
+## 10. Results & Rankings (Module 10)
+
+### `ResultsDraft`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `eventId`, `normalizationRunId` | | Which run this draft is based on — organizer-selectable, defaults to most recent |
+| `draftStatus` | enum: `IN_PROGRESS \| READY` | Gates auto-publish |
+| `publishMode` | enum: `AUTO \| MANUAL` | |
+
+### `PublishedResultVersion` — never edited in place, only superseded
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `eventId`, `versionNumber` | | |
+| `status` | enum: `LIVE \| SUPERSEDED \| UNPUBLISHED` | Status transitions only — never deleted |
+| `correctionReason` | text, nullable | Required whenever this version came from a post-publish correction |
+| `unpublishReason` | text, nullable | Required if unpublished |
+
+### `RankResultEntry`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `publishedResultVersionId`, `submissionId` | | |
+| `rank` | int | **Dense ranking** — multiple entries can share the same `rank` when tied all the way through the cascade |
+| `displayScore`, `isScoreOverridden` | float, boolean | Override flag for post-publish score corrections |
+| `isDisqualified` | boolean | |
+
+### `SpecialAwardResultEntry`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `publishedResultVersionId`, `criterionId`, `submissionId` | | |
+| `nominationCount` | int | Tally of `Score.value = 1` across `COMPLETED` assignments for that `SPECIAL_AWARD` criterion |
+| `isShared` | boolean | True if resolved via tie-share |
+
+**Rank tie-break cascade (ends in sharing, never manual escalation):**
+`NormalizedScore.finalScore` → pre-normalization `averageRawTotal` →
+`bonusRaw` → **share the position and prize.** Dense ranking, not
+skip-ranking — a tie at rank 2 means the next distinct score takes rank
+3, not 4.
+
+**Special-award tie-break cascade — bonus checked before final score,
+the reverse order from the rank cascade above:** nomination count →
+`bonusRaw` → `NormalizedScore.finalScore` → share the award.
+
+**Visibility gate:** independent of `EventPhase` — governed entirely by
+whether a `PublishedResultVersion` with `status: LIVE` exists.
+
+**Post-publish correction is a new, versioned layer, not a reopening
+of Module 9's permanently-locked normalization** — `NormalizationRun`
+itself remains untouchable after `resultsAnnounceAt` (D126); corrections
+only ever produce a new `PublishedResultVersion` on top of an existing,
+frozen computation.
+
+---
+
+## 11. Certificates (forward-looking — not yet a finalized stage doc)
 
 Sketched here per the extensive discussion in `DECISIONS.md` D34-D40;
 treat as directional, not locked, until a proper stage doc exists.
@@ -252,7 +545,7 @@ any time.
 
 ---
 
-## 7. Voting (forward-looking — not yet a finalized stage doc)
+## 12. Voting (forward-looking — not yet a finalized stage doc)
 
 Sketched per D41-D50; directional only.
 
@@ -277,25 +570,19 @@ percentage/count are surfaced post-publication (D46).
 
 ---
 
-## 8. Audit
+## 13. Audit
 
 ### `AuditLog`
 
-**Implemented (Module 2):** `id`, `actorUserId` (fk → User),
-`action` (string), `metadataJson` (json), `createdAt`. Append-only —
-`AuditService.record()` is the only write path, and nothing ever
-updates or deletes a row. Currently written by: `SITE_ADMIN_BYPASS`
-(every `EventRoleGuard` bypass), `STAFF_ACCOUNT_CREATED`,
-`ORGANIZER_ADDED`, `JUDGE_INVITED`, `JUDGE_INVITATION_RESENT`,
-`JUDGE_INVITATION_ACCEPTED`/`_DECLINED`. Every privileged or destructive
-action across every future module writes here too — role assignment,
-invitation actions, voting round resets with their mandatory reason,
-results publication. Never a bare `DELETE` anywhere in the schema
-without a corresponding audit entry for context.
+Append-only. Every privileged or destructive action across every module
+writes here — role assignment, invitation actions, `siteAdmin` bypasses
+(D14), voting round resets with their mandatory reason, results
+publication. Never a bare `DELETE` anywhere in the schema without a
+corresponding audit entry for context.
 
 ---
 
-## 9. Import / export paths (brief requirement, tracked here as they're
+## 14. Import / export paths (brief requirement, tracked here as they're
 decided)
 
 - Event/Track/Prize descriptions are stored as markdown — directly

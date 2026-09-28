@@ -1043,3 +1043,466 @@ another visual pass. `/events` had no purpose distinct from `/` once
 this was done, so it was deleted rather than kept as a redundant route
 — the three places that used to link/redirect to it (nav, post-login,
 post-password-reset, post-event-delete) now point at `/` directly.
+
+---
+
+## Submission Verification (Module 6)
+
+**D91 — A manual, organizer/admin-triggered commit-history verification
+pipeline gates entry to judging. Never runs automatically at any
+timeline event.**
+Context: user wanted certainty over convenience — an automatic trigger
+at `eventEndsAt` could run before an organizer is ready to handle the
+review queue it produces.
+
+**D92 — Verification window is `eventStartsAt` → `submissionsCloseAt`,
+not `eventEndsAt`.**
+Context: resolves the open question from the original Module 7
+discussion — user gave a direct, explicit answer rather than defaulting
+to the two timestamps' usual (but not guaranteed) equality.
+
+**D93 — Classification is three-way (all-in-window → auto `VERIFIED`;
+mixed → `SUSPICIOUS`; all-out-of-window → `REJECTED`), but `REJECTED` is
+explicitly NOT auto-`DISQUALIFIED` — it still requires human review
+before a team is actually excluded from judging.**
+Context: GitHub commit timestamps are suggestive, not conclusive
+evidence (squashed merges, imported history, timezone artifacts can all
+produce a false "all outside" read) — the platform's "no status a human
+can't see and reverse" principle extends to even the strongest automatic
+signal here.
+
+**D94 — Private repos and non-GitHub URLs are never auto-rejected —
+both route straight to manual review (`PRIVATE`, `NON_GITHUB`
+respectively), with disqualification only ever a human decision made
+with mandatory remarks.**
+Context: repo accessibility or platform choice isn't evidence of
+cheating — conflating "couldn't check" with "found guilty" would be a
+real correctness bug, not just an unfriendly default.
+
+**D95 — Public/private repo status is checked only during verification,
+never at submission time. The submission form instead carries an
+advisory notice about the public-repo expectation.**
+Context: explicit user instruction — avoids reopening Module 5's
+submission-time validation surface for a check that belongs later in the
+pipeline.
+
+**D96 — GitHub tokens are the one deliberate exception to the
+platform's hash-everything-sensitive rule: stored with reversible
+AES-256-GCM encryption (key via Docker secrets), because the app must
+read the plaintext back to call the GitHub API.**
+Context: every other token in the system (sessions, verification,
+invitations) is compare-only and therefore safely one-way-hashed; a
+GitHub PAT's use case is fundamentally different and needed a distinct,
+explicitly documented pattern rather than a forced fit into the existing
+one.
+
+**D97 — Multi-token rotation, rate-limit-aware, with invalid tokens
+surfaced as an immediate admin-dashboard alert, not a silent failure.**
+
+**D98 — Introduced a shared async worker container (BullMQ + Redis),
+used by both submission verification and (later) certificate rendering,
+as two independent queues in one container.**
+Context: this reverses the earlier "no async worker needed, bulk
+certificates dropped" position from the certificates discussion — that
+conclusion held only because bulk certificate export was optional
+scope-creep; verification's external GitHub API calls are a genuine,
+non-optional requirement for exactly the same isolation reasoning (CPU/
+latency contention with other users' requests) that motivated rejecting
+in-process execution before.
+
+**D99 — Rejection/disqualification requires a mandatory written reason,
+consistent with every other consequential organizer action in this
+platform (bans, voting-round restarts).**
+
+**D100 — Rejected/suspicious entries remain fully visible and filterable
+in the organizer's list — never hidden.**
+
+**D101 — Re-verification supports three scopes: full re-run, filtered
+re-run (by current status), and targeted re-run (specific submissions),
+mirroring the same three-scope pattern used for the initial trigger.**
+
+---
+
+## Judge Assignment (Module 7)
+
+**D102 — Two assignment modes, coexisting: manual (organizer assigns
+judges to projects one at a time, respecting a per-judge project limit)
+and algorithmic (checkbox-driven: by track, or random as fallback/
+explicit choice).**
+
+**D103 — Both assignment modes are hard-gated on
+`finalDecision: APPROVED` (Module 6) — a submission still under review
+or disqualified is structurally excluded from the assignable pool, not
+just deprioritized or hidden in the UI.**
+Context: extends the same "backend-enforced, not UI-hidden" principle
+used for role isolation everywhere else to the assignment pool itself.
+
+**D104 — No self-service judge conflict-of-interest declaration
+mechanism. Conflict avoidance is organizer-managed only, via the same
+manual-transfer mechanism used for no-shows, used proactively.**
+Context: this was the one open item carried over from the initial
+Judge Assignment discussion (before verification was introduced); the
+user's answer to the no-show/reliability-note question implicitly
+confirmed this simpler model rather than asking for a self-service
+declaration system.
+
+**D105 — A judge who never completes an assigned review can have that
+assignment manually transferred to another judge. A written remark is
+then attached to the judge's `User` profile — platform-wide, visible to
+any organizer/admin, never visible to the judge or to any participant.**
+Context: user was explicit that this needed to inform *future* event
+invite decisions, not just log a local incident — placing it on `User`
+rather than on the event-scoped `EventMembership` was a deliberate
+structural choice, not a default.
+
+**D106 — Once a judge actually submits a score for an assignment, that
+assignment is permanently locked to them — no transfer possible after
+completion, by anyone, ever.**
+Context: consistent with the platform-wide rule that a completed, real
+record (a submitted score, a finalized team roster, an issued
+certificate) is never silently altered after the fact.
+
+**D107 — Participants never learn which judge(s) reviewed their project,
+at any stage, in any export or view.**
+Context: explicitly scoped as solving *one* problem (protecting judges
+from being lobbied/identified by participants) and explicitly **not**
+claimed to solve a different one (a judge recognizing a project's
+content despite not knowing whose it officially is) — that residual risk
+is handled, if at all, by organizer awareness via D104, not by any
+technical anonymity guarantee.
+
+---
+
+## Rubric & Scoring (Module 8)
+
+**D108 — A new explicit timeline field, `Event.judgingClosesAt`, replaces
+what Module 3 originally modeled as an implicit, boundary-less gap
+between `eventEndsAt` and `resultsAnnounceAt`.**
+Context: the user wanted a concrete, organizer-set deadline for judges to
+finish scoring — not just "whenever the organizer decides to announce
+results." This required amending Module 3's validation chain and
+`EventPhase` sequence (new `JUDGING_CLOSED` phase) after the fact —
+propagated back into `03-event-management.md` directly, same pattern as
+D13's earlier cross-module fix.
+
+**D109 — [SUPERSEDED by D118] Scoring scale was initially fixed at 1–5,
+platform-wide, not configurable per criterion.** Kept here for history;
+see D118 for the final design.
+
+**D110 — A judge's own submitted scores remain editable, unlimited times,
+by that same judge, until `judgingClosesAt`.**
+Context: this is a direct reversal of the "instantly final" option that
+had been proposed as the safer default — the user chose flexibility
+anchored to a hard deadline instead. Critically, this does **not**
+conflict with Module 7's D106 (no transfer to a different judge after
+completion) — the two are independent axes: assignment ownership is
+permanently locked on first submit; the content of that judge's own
+scores stays mutable until the deadline.
+
+**D111 — Every resubmit (not every draft save) writes an immutable,
+append-only `ScoreRevision` snapshot — full criteria values plus
+feedback text, timestamped, never edited or deleted afterward.**
+Context: direct response to "log store all the changes judges made
+during the resubmit the score" — read as applying to completed
+resubmissions specifically, not every incremental autosave, to avoid
+flooding the history with noise.
+
+**D112 — A required overall-feedback text field per judge per project,
+separate from any per-criterion notes, enforced as mandatory before
+`submit-review` succeeds.**
+Context: read from "so they can add their words and justify their given
+score" as an intentional requirement, not merely an optional nice-to-have
+— flagged as an assumption in the stage doc's open questions in case the
+user meant it as optional instead.
+
+**D113 — Organizer-defined bonus tracks, separate from the weighted
+scoring rubric: flat point value (e.g. +5, +10), optional per event,
+fully independent of the scoring criteria's weighting.**
+Context: user wanted the platform itself to support the same kind of
+"base score plus optional bonus" structure the Dogfood brief uses for
+its own hackathon scoring — this is a genuine platform feature request,
+not a meta-comment about our own submission's bonus challenges (which
+was clarified and ruled out as the intended meaning first).
+
+**D114 — Scoring criteria weights (`weightPercent`) must sum to exactly
+100 across an event's `SCORING` criteria; bonus tracks use flat,
+unconstrained point values with no sum requirement.**
+Context: resolves the earlier open fork (free-form weights vs.
+sum-to-100) directly by the user's explicit instruction — organizers now
+author weights as percentages with validated totals, while bonus points
+remain intentionally separate, flat numbers.
+
+**D115 — [SUPERSEDED by D119] An earlier final-score formula rescaled the
+combined general+bonus raw total against a combined maximum
+(`5 + Σbonus.maxPoints`).** This was later proven to have a real flaw
+(rewards bonus at the expense of a project's genuine general-score
+excellence whenever bonus isn't maxed) and was replaced — see D119.
+
+**D116 — A submission's overall score is the average of `finalScore`
+across only judges with `JudgeAssignment.status: COMPLETED` — a
+non-responding judge is excluded entirely from both the sum and the
+divisor, never counted as a zero.**
+Context: explicit user instruction, given directly as an example (3
+assigned, 2 respond → average of exactly those 2). Still holds
+unchanged under the finalized D119 formula — the exclusion happens at the
+raw-total-averaging stage, before the single final scale conversion.
+
+**D117 — Bonus tracks are scored on a scale (0 to the track's
+`maxPoints`), not as a binary toggle. Decided directly rather than
+asked back to the user, given it's an implementation detail with a
+clearly better default (consistency with `SCORING` criteria's
+guidance-text pattern, one shared code path instead of two).**
+
+**D118 — Judge input scale changed from fixed 1–5 (D109) to raw 0–100 per
+`SCORING` criterion. The organizer-configured winning/display scale
+(`Event.finalScoreDisplayScale`, default 5) remains entirely separate
+and unaffected — the two numbers must never be conflated.**
+Context: the user's own worked examples used 0–100 judge inputs (e.g.
+"judges give 80 for T1"), and confirmed this was intentional, not
+illustrative shorthand for a 1–5 rating. This also directly serves the
+earlier, unresolved decimal-precision/tie-breaking goal from much
+earlier in the scoring discussion — a 0–100 input gives roughly 20×
+finer resolution than 1–5 before any cross-judge averaging even helps.
+
+**D119 — Finalized final-score formula, after two rejected intermediate
+attempts:**
+```
+generalRaw (per judge) = Σ(criterionValue × weightPercent) / 100   [0,100]
+bonusRaw (per judge)    = Σ(awarded bonus points)
+rawTotal (per judge)    = generalRaw + bonusRaw
+averageRawTotal         = average of rawTotal across
+                          JudgeAssignment.status = COMPLETED judges only
+finalScore              = (averageRawTotal / 100) × finalScoreDisplayScale
+```
+Context — the full derivation history, because two earlier variants
+were built, tested with numbers, and rejected in this same design
+session:
+1. **Combined-denominator variant (D115):** divided the combined
+   general+bonus raw total by a combined maximum
+   (`5 + Σbonus.maxPoints`). Rejected: any project that didn't max out
+   bonus was penalized in the denominator regardless of general-score
+   excellence — a perfect general score with zero bonus scored barely
+   above 1 out of 5 in testing.
+2. **Pre-divided-then-add variant:** computed `generalScore` as an
+   already-averaged 1–5 (or similar small-scale) value first, *then*
+   added raw bonus points on top before a final rescale. Rejected: this
+   let a low-quality project with full bonus decisively outscore a
+   high-quality project with none, because bonus (raw, e.g. up to 8)
+   became disproportionately large next to an already-shrunk general
+   score (e.g. 1.5). Proven with numbers: a `generalScore=1.5` project
+   with full bonus reached a higher final score than a `generalScore=5`
+   (perfect) project with no bonus.
+3. **Final, accepted variant (D119 itself):** general and bonus are
+   combined while `generalRaw` is still in its full 0–100 range (never
+   pre-divided), and every judge's `rawTotal` is averaged across
+   `COMPLETED` judges *before* the single final scale conversion at the
+   very end. This is self-regulating: bonus's maximum possible influence
+   scales naturally with how large the organizer sets bonus point values
+   relative to 100 — small bonus values (e.g. +5/+3) can only ever
+   affect genuinely close calls; they cannot overturn a real quality
+   gap. Verified against multiple worked scenarios (low/medium/high/
+   near-perfect/perfect projects, with and without full bonus, with one
+   non-responding judge, and with intentionally oversized bonus tracks
+   to find the breaking point).
+
+**D120 — Overflow (`averageRawTotal > 100`, i.e. `finalScore` exceeds
+`finalScoreDisplayScale`) is expected and displayed honestly, not
+clamped or treated as an error — shown as the raw computed number plus a
+fixed "Overachiever" label in the public gallery. Never shown on
+certificates, consistent with certificates carrying no score at all
+(D34). The overflow check is evaluated at the averaged submission level,
+not per individual judge — confirmed via worked example (one judge at
+108, one at 105.75, averaging to 106.875, which crosses the threshold;
+a single judge crossing it alone would not, if the average didn't).**
+Context: user explicitly wanted the uncapped approach ("everyone get
+their honest point no matter what... if someone cross the scale then
+that project genuinely deserve that"), rejecting an earlier
+capped-at-the-ceiling alternative that had been shown, with worked
+numbers, to collapse differentiation among top performers into
+artificial ties — directly undermining the original tie-breaking
+motivation for finer score precision.
+
+**D121 — Bonus guardrail: if an event's total `BONUS.maxPoints` exceeds
+a threshold (default 20), the organizer sees a warning before
+publishing and may proceed only with explicit acknowledgment, logged to
+`AuditLog`. Soft warning, not a hard block — decided directly by Claude
+as an implementation detail, not asked back to the user, since it fits
+the same pattern already used for every other powerful-but-risky
+organizer action in this platform (warn/log, don't silently prevent).
+Reversible to a hard block with a one-line change if preferred.**
+
+---
+
+## Normalization (Module 9)
+
+**D122 — Judge calibration (mean, stddev, sample count) is a global,
+platform-wide profile on `User`, not scoped per event, and updates
+live after every `submit-review`.**
+Context: reflects the real operating model (Hackathon Raptors runs the
+same judge pool across dozens of events) — a judge's harshness/leniency
+is a stable personal trait worth learning across contexts, not
+something that should reset every event.
+
+**D123 — Minimum-N threshold for normalization eligibility: 3, counted
+platform-wide across a judge's entire history, not per-event.**
+
+**D124 — A judge below the minimum-N threshold is normalized against
+that specific event's own aggregate mean/stddev (computed across every
+judge's `rawTotal` in that event), rather than their own statistically
+unreliable personal figures.**
+Context: this solves a real blending problem that surfaced during
+design — averaging a real personal z-score with an unconverted raw
+number for a different judge on the same submission is not
+mathematically valid. Decided directly by Claude, not asked back, as
+the standard defensible handling of a mixed-reliability judge
+population; the alternative (mixing raw and normalized numbers
+directly) would have been a genuine correctness bug, not a style
+choice.
+
+**D125 — A judge with zero variance (`judgeCalibrationStdDev = 0`,
+i.e. they score every project identically) gets `z = 0` for every
+submission — neutral, not excluded — and this is explicitly flagged
+("uniform scoring detected") for admin/organizer visibility.**
+Context: consistent with the platform-wide rule that no status is ever
+invisible to a human who might need to act on it (same principle behind
+the verification pipeline's manual-review queue and the voting
+abuse-flagging system).
+
+**D126 — Normalization is triggered manually, can be re-run any number
+of times, but only within the window `judgingClosesAt <= now() <
+resultsAnnounceAt`. Once `resultsAnnounceAt` passes, it is permanently
+locked for that event — no exceptions, no admin override.**
+Context: explicit user instruction ("once the event end or winner
+announced then no one can run the normalization"). This is the same
+class of protection already applied to cast votes, issued certificates,
+and finalized team rosters — nothing that's already real and
+public/announced can be silently recomputed.
+
+**D127 — Every normalization run snapshots each judge's mean/stddev/
+sample-count *at that exact moment* into a permanent, per-run record
+(`NormalizedJudgeScore`), rather than storing a live reference back to
+the judge's ever-evolving global profile.**
+Context: explicit user instruction ("we attach the judge mean and
+stddev score with review he did"). This prevents a past, already-locked
+event's normalization from silently appearing different later, purely
+because the judge's global profile moved on from reviewing *other*,
+later events — the same "no after-the-fact mutation of a real record"
+principle applied consistently elsewhere.
+
+**D128 — Judge calibration data (live profile and per-run snapshots) is
+visible to admin and organizer, platform-wide — not scoped only to the
+organizer of the event currently being normalized. Never visible to the
+judge themselves or to any participant.**
+Context: user specified admin/organizer visibility; the platform-wide
+scope (rather than event-scoped) was decided directly by Claude for
+consistency with Module 7's `JudgeReliabilityNote` visibility pattern,
+flagged as an assumption in the stage doc rather than asked back.
+
+---
+
+## Results & Rankings (Module 10)
+
+**D129 — Retroactive fix to Module 8: added a third `RubricCriterion`
+kind, `SPECIAL_AWARD`, for organizer-defined special categories (Best
+Code, Most Unique Feature, etc.) that the original rubric design had no
+mechanism to actually judge.**
+Context: the user caught a genuine gap — special categories were
+mentioned in the brief and referenced loosely in early results
+discussion, but nothing in Module 8 ever specified how judges would
+actually produce a winner for them. Resolved by folding a nomination
+flag (`Score.value = 0 or 1`) directly into the existing per-submission
+review flow — a judge nominates a submission they're already reviewing
+for zero or more special-award categories, no separate cross-submission
+comparison step required. Nominations are tallied entirely outside the
+`generalRaw`/`bonusRaw`/`rawTotal` formula — they never affect a
+submission's rank-based score.
+
+**D130 — Special-award winner = highest nomination count, tallied only
+from `COMPLETED` judge assignments.** Honest limitation documented
+directly in the doc: a judge can only nominate from submissions they
+personally reviewed, not the full event-wide pool — this is a
+coverage-dependent signal, not a full head-to-head comparison.
+
+**D131 — The organizer/admin explicitly selects which `NormalizationRun`
+is official for building results (default: most recent, but changeable,
+with full run history and a ranking preview visible before committing).**
+
+**D132 — Rank-based tie-break cascade: `finalScore` → pre-normalization
+`averageRawTotal` → `bonusRaw` → share the position and prize together.
+No manual-review escalation for rank ties — resolution is fully
+automatic, ending in genuine sharing.**
+Context: direct user instruction, given as a worked example (4
+projects, 2 tied for 2nd share that position and its prize). This is a
+deliberately different philosophy from voting's tie handling elsewhere
+in this platform, where automation stops short of a final call —
+rank ties are resolved completely automatically here.
+
+**D133 — Dense ranking, not skip-ranking: after a tied position, the
+next distinct score takes the next sequential rank number, not a
+skipped one.** For A > B=C > D: ranks are 1, 2, 2, 3 — never 1, 2, 2, 4.
+Context: read directly from the user's own worked example ("3rd project
+share the 3rd position"), which only makes sense under dense ranking;
+standard Olympic-style skip-ranking was explicitly ruled out by that
+example.
+
+**D134 — [SUPERSEDED by D140] Special-award ties were initially proposed
+to reuse the rank cascade (nomination count → finalScore → share) as a
+default, decided directly by Claude without separate user confirmation.**
+
+**D135 — Draft → publish workflow: a `ResultsDraft` is built privately
+against a selected normalization run and reviewed by the organizer
+before anything goes public, with an explicit `draftStatus:
+IN_PROGRESS | READY` flag and an organizer-chosen `publishMode: AUTO |
+MANUAL`.**
+Context: direct user instruction — organizers wanted a review step to
+catch errors before announcement, not just a single irreversible
+publish action.
+
+**D136 — `AUTO` publish mode only fires at `resultsAnnounceAt` if the
+draft is `READY` at that exact moment; an `IN_PROGRESS` draft falls
+back to requiring manual publish. Decided directly by Claude as the
+safer default — silently auto-publishing an unfinished draft is a worse
+failure mode than one extra manual click.**
+
+**D137 — Unpublishing a live result requires a mandatory reason and is
+logged, but never deletes the version record — only marks it
+`UNPUBLISHED`.**
+
+**D138 — Visibility of results to participants is gated entirely by
+the existence of a `PublishedResultVersion` at `status: LIVE`,
+completely independent of `EventPhase` reaching `RESULTS_ANNOUNCED`.**
+Context: `EventPhase` is purely timestamp-computed (Module 3) and
+advances whether or not an organizer has actually published anything —
+conflating the two would leak partial/draft information the moment a
+timestamp passed, regardless of organizer readiness.
+
+**D139 — Post-publish correction (disqualify, reorder rank, override a
+displayed score) is explicitly authorized by the user, resolving the
+earlier design tension flagged against D126. This does not reopen or
+re-run normalization itself — `NormalizationRun` remains permanently
+locked after `resultsAnnounceAt` exactly as D126 specifies. Corrections
+are a separate, new-version-per-correction layer sitting on top of an
+already-computed, frozen result, always with a mandatory reason, always
+visibly marked as a correction (never presented as an original,
+unmodified result), and always fully audit-logged.**
+Context: this was flagged as a genuine open policy question before the
+user answered directly — confirming corrections should exist, but as a
+versioned override layer rather than a reopening of the underlying
+computation. The distinction matters: D126's guarantee (nobody can
+silently recompute an announced result via normalization) stays fully
+intact; what's new is a visible, audited, deliberate override
+mechanism for the rare case something genuinely needs fixing after the
+fact.
+
+**D140 — Corrected special-award tie-break cascade, per explicit user
+clarification: nomination count → `bonusRaw` → `NormalizedScore.finalScore`
+→ share. Supersedes D134's default.**
+Context: the user's original tie-break instruction ("consider bonus
+score... even if bonus tie, consider final score... share") was first
+applied to the main rank-prize cascade, then clarified to actually be
+about special-award categories specifically. The resulting order
+deliberately differs from the rank-prize cascade (Section 3/D132, which
+checks pre-normalization raw total before bonus) — bonus is checked
+*before* the general final score for special awards, since a bonus
+track (e.g. "Innovation") often correlates more directly with what a
+special category is rewarding than the overall weighted rubric does.
