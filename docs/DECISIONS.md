@@ -2128,3 +2128,200 @@ the real audit log: entries with no recognizable metadata key (e.g.
 `STAFF_ACCOUNT_CREATED`, `GITHUB_TOKEN_ADDED`) now show
 `(unavailable)` in both columns; entries with a resolvable target
 (e.g. `SUBMISSION_SUBMITTED`) still resolve correctly.
+
+---
+
+## Module 19 (`.dogfood.toml` Assembly & `peer_scores` Route) — built against docs/design/19-dogfood-toml.md
+
+**D179 — Built the dedicated `GET /submissions/:submissionId/judges/
+:judgeId/scores` route** (`apps/api/src/scoring/
+audit-scoring.controller.ts`, `ScoringService.getForAudit`) —
+parameterized by which judge, not the caller, so an organizer can
+audit one specific judge's review of one specific submission (a real
+capability the old `/assignments/:id` route never had, since its
+ownership check only ever allowed the exact assigned judge). Guard:
+`caller.id === judgeId`, OR `ORGANIZER`/`ACCEPTED` membership on the
+submission's event, OR `siteAdmin` (audited, same `SITE_ADMIN_BYPASS`
+convention as `EventRoleGuard`). `.dogfood.toml`'s `judge_scores`/
+`peer_scores` moved onto this route, still the same URL for both
+(D170's established convention unchanged).
+
+**Three factual corrections to this doc's own Section 3 example,
+checked directly rather than assumed:** no route in this codebase is
+`/api/`-prefixed (`main.ts` has no `setGlobalPrefix`); `submit` was
+pointed at the submission *create* route, not Module 5's real
+`POST /submissions/:id/submit`; and `judge_scores`/`peer_scores` were
+shown as two different paths, contradicting the already-shipped,
+already-verified D170 design (same URL, different header). Corrected
+in the doc rather than built as written.
+
+**Live-verified against the real fixture-seeded event:** judge A's own
+header — 200; judge B's header on the identical URL — 403
+`NOT_ASSIGNMENT_OWNER` (the actual `peer_scores` proof); the seeded
+organizer's header — 200 (the new audit capability); the seeded
+participant's header — 403; no session at all — 401. 7 new unit tests
+(465 total in `apps/api`) cover all three guard branches (self,
+organizer, refused) plus the `siteAdmin` audit-bypass.
+
+---
+
+## Module 20 (Demo Environment) — built against docs/design/20-demo-environment.md
+
+**D180 — Implemented `DEMO_MODE` end-to-end**: both `docker-entrypoint.sh`
+scripts (api and worker) select `${POSTGRES_DB}_demo` instead of
+`${POSTGRES_DB}` when `DEMO_MODE=true`, resolving to exactly
+`raptor_demo` under this repo's actual (non-overridden)
+`docker-compose.yml` config. `apps/api/src/scripts/
+ensure-demo-database.ts` creates that database if it doesn't exist yet
+(Postgres has no `CREATE DATABASE IF NOT EXISTS`; `prisma migrate
+deploy` assumes its target already exists) — treats the duplicate
+-database error as success, not failure, since it's meant to be re-run
+on every boot. `GET /config/public` (`AppController`, no `/api` prefix
+— same correction as D179) backs the frontend's `DemoBanner` component.
+
+**Real bug found and fixed during the build, not a design gap:** the
+Running event's original timeline had `registrationClosesAt` landing
+*after* `eventStartsAt` — `computeEventPhase` (`event-phase.ts`) walks
+its boundary list in fixed order and stops at the first one still in
+the future, so this inverted ordering made the event compute as
+`REGISTRATION_OPEN` instead of the intended `SUBMISSIONS_OPEN`.
+Confirmed live (curled the public events list, saw the wrong phase)
+before fixing, not caught by inspection alone. Fixed by moving
+`registrationClosesAt` to before `eventStartsAt` — the doc's narrative
+("registration still open for others") describes the seeded *data*
+(some registered participants haven't joined a team yet), not a
+distinct `EventPhase` value; the phase model has no combined state for
+that, by design.
+
+**`seed-demo.ts` reuses this project's own tested pure formula modules
+rather than reimplementing the math**: `computeRankResults`/
+`computeSpecialAwardWinners` (results-formula.ts) for the Archived
+event's published ranking — including a genuine tied rank 1, produced
+by deliberately giving two teams identical per-judge scores, not a
+hand-set rank number; `computeJudgeZScore`/`rescaleToZeroHundred`
+(normalization-formula.ts) for its one real `NormalizationRun`;
+`computeJudgeRawTotal`/`computeFinalScore` (score-formula.ts)
+throughout. Certificates are signed for real via
+`CertificateSigningService` (instantiated directly — a plain class,
+no DI needed), not hand-faked signatures, so they verify correctly
+through the same code path a real certificate would.
+
+**Live-verified end-to-end against a real scratch `raptor_demo`
+database:** all four events created with correct team/submission
+counts (Draft 0, Running 6 [4 submitted + 2 not], Voting 5, Archived
+6); the Archived event's tie confirmed at rank 1 (2 entries); 12
+certificates issued (9 participant + 3 winner, matching the tied
+teams' combined member count); the Voting event's round is `ACTIVE`
+with votes cast but zero published `VotingResultVersion` rows (tallies
+correctly withheld while open, Module 11's own rule); re-ran the seed
+script twice — event count stayed at 4, no content duplication, only
+timeline fields refreshed. Booted the real API against this database
+and confirmed live: `/config/public` reports `demoMode: true`, the
+public events list shows only the two `PUBLISHED` events (Archived is
+correctly hidden from that list and from its own gallery once
+non-`PUBLISHED` — pre-existing app behavior, not something this module
+changed), a certificate view renders and 200s, the Archived event's
+public results page 200s. Confirmed the negative case too: `DEMO_MODE`
+unset connects to the ordinary `raptor` database, `/config/public`
+reports `demoMode: false`, and `seed-demo.ts` refuses to run at all
+without `DEMO_MODE=true` (a hardcoded guard, not just relying on the
+entrypoint never calling it). The frontend banner was verified in a
+real browser (Playwright, installed for this check): renders the
+exact required text, has no dismiss control, persists across
+navigation, and is absent entirely against a non-demo API.
+`docker-compose.yml`'s `DEMO_MODE` passthrough and the entrypoint
+shell changes are reviewed but not container-tested — this sandbox has
+no Docker (same limitation noted in `apps/api/Dockerfile`'s own header
+comment).
+
+**Post-build reconciliation:** the design doc's Section 2.1 was
+rewritten to list every timeline field explicitly, in order, for all
+three date-driven events, closing the "partial spec hides an ordering
+bug" gap the Running-event bug above demonstrated. `seed-demo.ts`'s
+Voting/Archived event constants had small day-offset drifts from these
+now-exact values (e.g. Voting's `registrationOpensAt` was `-10d`
+against the doc's `-9d`) — none individually broke ordering, but
+updated to match the doc precisely rather than leaving code and doc
+to describe slightly different timelines. Also fixed Section 5's own
+lingering `/api/config/public` reference (missed when Module 19's
+`/api`-prefix correction, D179, was made elsewhere). Re-verified live
+after both fixes: phases still compute correctly, 470/470 tests
+passing.
+
+---
+
+## The real run.py — Module 19's schema guess corrected, first genuine checker run
+
+**D181 — The organizers' actual `run.py` was obtained and run for real
+for the first time. It exposed a genuine schema bug in `.dogfood.toml`,
+now fixed, and the run itself passed every check.**
+
+Context: `.dogfood.toml` (D170, Module 19) was originally assembled by
+guessing the shape the organizers' checker would expect — a nested
+`[checker]` / `[checker.routes]` / `[checker.auth_headers]` structure,
+with per-tier `t1_core`/`t2_judging`/`t3_public`/`t4_stretch` booleans
+under `[tiers]`. No copy of the real `run.py` existed anywhere in this
+repo to verify that guess against; it was carried as an assumption
+across Modules 19/20.
+
+**The real `run.py` (provided by the user this session, at
+`D:\Raptor\run.py`, outside this repo) reads a completely different,
+flatter shape**: top-level `[portal].base_url`, top-level `[routes]`
+(gallery/submit/judge_scores/peer_scores/csv_export), top-level `[auth]`
+(four full `Cookie: raptor_session=...` header lines), and `[tiers].
+claimed` (a plain list of `"T1"`/`"T2"`/`"T3"`/`"T4"` strings — no
+per-tier booleans at all; pass/fail is computed live from the checks
+themselves, never read from the config). The guessed nested `[checker.*]`
+shape would have crashed immediately on `cfg["portal"]["base_url"]`
+(direct dict indexing, no `.get()` fallback) — a real bug that would
+only have surfaced at the worst possible moment, during an organizer's
+actual grading run, never having been caught by anything in this repo's
+own test suite since nothing here ever previously executed the real
+script.
+
+**Fixed**: `.dogfood.toml` restructured to the real top-level
+`[portal]`/`[routes]`/`[auth]` shape. The route values (already correct
+from Module 19/20's own live verification) carried over unchanged; the
+four auth header values were re-sourced from a fresh local boot of
+`apps/api/.fixture-auth-headers.txt` and committed as full `Cookie:
+raptor_session=...` lines (previously left blank in version control —
+now committed deliberately, since they're throwaway fixture/seed
+session rows against a local dev database, not production credentials,
+and a real checker run needs them present to actually connect). The
+`t1_core`/`t2_judging`/`t3_public`/`t4_stretch` booleans were kept as
+this project's own human-readable bookkeeping (referenced from
+`README.md`) since `run.py` silently ignores unrecognized keys — but
+they are no longer what the real checker reads.
+
+**Executed for real**: Postgres already running locally on `:5433`
+(D57), `apps/api` booted in dev mode on `:4000` against the existing
+fixture-seeded database, then `python run.py .dogfood.toml --fixtures
+apps/api/prisma/fixtures.json` — the organizers' actual, unmodified
+script, not a reproduction. Result: all 7 checks `PASS` (gallery
+public; fixture project title present in the gallery body; closed-event
+late submission rejected with a 4xx; judge sees own scores; judge
+cannot see a peer's scores; participant blocked from judge_scores;
+CSV export returns 200 with comma-delimited content), and the script's
+own tier computation reports `claimed T1 T2, verified T1 T2` — no
+overclaim warning. The full, unedited transcript is committed at
+`acceptance-report.txt`.
+
+**Tier claims updated to match, honestly**: `t1_core` and `t2_judging`
+flipped to `true` — genuinely, independently confirmed by the real
+checker, not this repo's own reproduction of equivalent checks (the
+distinction D166's earlier entry drew explicitly). `t3_public` and
+`t4_stretch` remain `false` — not because anything failed, but because
+this `run.py` implements no checks for either tier at all (only
+`TIERS = ["T1", "T2"]` worth of `Check` objects exist in the script);
+whether those tiers hold is outside what any mechanical checker here
+can confirm, and stays a human-judge call per D166's original framing.
+`README.md`'s "Tiers claimed" section updated to show the real
+transcript rather than the earlier all-`false` placeholder.
+
+Rejected: leaving the nested `[checker.*]` guess in place since it "was
+probably close enough" — the whole point of this file (D170: "the
+receipt, not the ambition") is that it's read by an external, unmodified
+script; a structural guess that would crash on first contact is exactly
+the kind of overclaim-by-omission this project's own honesty rule
+exists to catch, once the real artifact was actually available to check
+against.

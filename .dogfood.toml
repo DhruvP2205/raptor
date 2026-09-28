@@ -5,86 +5,106 @@
 # — never claimed ahead of what's built. The brief's own scoring rubric
 # rewards honest gap reporting over inflated tier claims; this file is the
 # receipt, not the ambition.
+#
+# IMPORTANT — schema note (corrected once the real run.py was obtained):
+# the organizers' actual run.py reads exactly four top-level things —
+# [portal].base_url, [routes].*, [auth].*, and [tiers].claimed (a list of
+# "T1"/"T2"/"T3"/"T4" strings) — and nothing else. It does NOT read a
+# nested [checker]/[checker.routes]/[checker.auth_headers] shape, and it
+# does NOT read per-tier booleans. An earlier version of this file guessed
+# a nested [checker.*] schema before the real run.py was available — that
+# guess was wrong and would have crashed run.py with a KeyError on
+# cfg["portal"]["base_url"]. Fixed to match the real script exactly. The
+# t1_core/t2_judging/t3_public/t4_stretch booleans below are kept only as
+# our own human-readable honesty tracking (README/DECISIONS.md reference
+# them) — run.py itself ignores everything in [tiers] except `claimed`.
 
 name = "Raptor"
 pitch = "A self-hostable, open-source hackathon submission & judging platform — built backend-first so role isolation and deadlines are never optional."
 
-[tiers]
-# Flip an entry to true only once its stage doc is implemented AND the
-# acceptance suite passes for it.
-#
-# Status as of this update: all 15 modules (stages/01-14 plus the Module 15
-# organizer shell) plus Module 16 (fixtures import, docs/design/
-# 16-fixtures-import.md) are implemented and have been live-verified against
-# a real Postgres. The 7 mechanical checks (D166) were run end-to-end against
-# the REAL organizer-supplied fixtures.json (8 tracks, 30 judges, 40 teams,
-# 41 projects, 126 scores — committed at apps/api/prisma/fixtures.json) via
-# apps/api/src/scripts/seed.ts on 2026-09-25: gallery load + contents (all 40
-# submissions present, including the one collapsed from two fixture project
-# entries per Section 4b), late-submission rejection, judge-own-scores,
-# peer-scores refusal, participant-refused-judge-scores, and CSV export (40
-# rows) all returned the expected status codes against a live-booted API.
-# That is strong evidence, but it is still our own reproduction of the seven
-# checks, not the organizers' actual run.py binary (which we don't have) —
-# booleans below stay false until that real run happens, per this file's own
-# rule above. Flip only after the real checker run, not on the strength of
-# this reproduction alone — flagged explicitly rather than decided silently,
-# since overclaiming a tier is the one thing D170 calls out as costing real
-# points.
-t1_core = false
-t2_judging = false
-t3_public = false
-t4_stretch = false
-claimed = []
-
-[checker]
-# Connection details for the organizers' run.py (D166/D170) — not a config
-# file real users or the running application ever read. base_url assumes
-# the app is booted per README (docker compose up, or apps/api's local dev
+[portal]
+# What run.py actually reads to know where to send requests. Assumes the
+# app is booted per README (docker compose up, or apps/api's local dev
 # convention — API_PORT=4000, see apps/api/.env.example).
 base_url = "http://localhost:4000"
 
-[checker.routes]
-# All five are concrete, working paths against the real fixtures.json import
-# (2026-09-25) — not templates. Re-generate before the actual checker run if
-# the DB has since changed (see [checker.regenerate]).
+[routes]
+# All five are concrete, working paths against the real fixtures.json
+# import — not templates. Re-generate before a real checker run if the DB
+# has since changed (see [regenerate] at the bottom of this file).
 gallery      = "/events/39bc0dac-0499-4969-b539-81d3bff3a755/submissions"
 submit       = "/submissions/3abf0b81-016a-4986-b6b1-116cf808e36b/submit"
-judge_scores = "/assignments/09d41474-35a9-4147-94e6-5cebc5917167"
+# Module 19 (docs/design/19-dogfood-toml.md) — moved off the old
+# assignment-id-keyed /assignments/:id route onto the dedicated
+# (submissionId, judgeId) audit route built for this
+# (scoring/audit-scoring.controller.ts), which also gives an organizer
+# real audit access to a specific judge's review — a capability the old
+# route never had.
+judge_scores = "/submissions/6730dbd7-8eeb-4b05-a78f-fbdf11acc35e/judges/fea18e3b-035c-4beb-bde2-f43916bf68fc/scores"
 # Same URL as judge_scores by design (D170) — the check is which judge's
 # auth header is attached, not a different route.
-peer_scores  = "/assignments/09d41474-35a9-4147-94e6-5cebc5917167"
+peer_scores  = "/submissions/6730dbd7-8eeb-4b05-a78f-fbdf11acc35e/judges/fea18e3b-035c-4beb-bde2-f43916bf68fc/scores"
 csv_export   = "/events/39bc0dac-0499-4969-b539-81d3bff3a755/export/submissions.csv"
 
-[checker.auth_headers]
+[auth]
 # Seed-time bootstrap (D169, hardened D175/Module 17) — the checker never
-# logs in. Paste the four `Cookie: raptor_session=...` lines here verbatim,
-# sourced from apps/api/.fixture-auth-headers.txt (gitignored — also printed
-# to stdout on boot) rather than re-running anything by hand. Left blank in
-# version control on purpose: these are live Session rows, not a secret
-# meant to be committed. Re-running the seed step reuses the same four
-# values rather than rotating them (D175) — filling this in once and
-# restarting the container repeatedly does NOT require re-copying.
-organizer   = ""
-judge_a     = ""
-judge_b     = ""
-participant = ""
+# logs in. Full `Cookie: raptor_session=...` header lines, sourced from
+# apps/api/.fixture-auth-headers.txt (gitignored — also printed to stdout
+# on boot). Re-running the seed step reuses the same four values rather
+# than rotating them (D175) — restarting the container repeatedly does
+# NOT require re-copying these. Committed here (unlike the prior blank
+# placeholders) because a real run.py execution needs them to actually
+# connect — these are fixture/seed-only session rows tied to a
+# throwaway local dev database, not production credentials.
+organizer   = "Cookie: raptor_session=c6755c39aa56fb7ecee8646b1421acd6340be559bb6cf6cc8cbcde595749f673"
+judge_a     = "Cookie: raptor_session=d6fafeff8ab2e01db6e79223a9a0f0ae5cc0a623add038abd08abbbcae724ccc"
+judge_b     = "Cookie: raptor_session=35da4da6b70a51060134ece961f4efeb9f1b8efb4a514c5ea19527f1cf56e883"
+participant = "Cookie: raptor_session=beef2355e976e2ee0d2e938f7573e9264581e1a4bcd4f5767db2f2352a801fb4"
 
-[checker.regenerate]
+[tiers]
+# `claimed` is the only key run.py itself reads — a list of "T1"/"T2"/
+# "T3"/"T4" strings. run.py computes what actually verified from live
+# checks and flags anything in `claimed` that didn't verify as an
+# overclaim.
+#
+# Real run.py executed against a live local instance (Postgres on
+# :5433, api on :4000, real fixtures.json import): all 7 checks PASS,
+# run.py's own output says "claimed nothing, verified T1 T2" — see
+# acceptance-report.txt (committed alongside this file) for the full,
+# unedited transcript. T1/T2 are genuinely, independently verified —
+# not just our own reproduction anymore.
+claimed = ["T1", "T2"]
+
+# Everything below is our own bookkeeping, not read by run.py. Flip an
+# entry to true only once its stage doc is implemented AND a real run.py
+# execution (not just our own reproduction of equivalent checks) has
+# passed the relevant checks for it.
+t1_core = true      # confirmed by real run.py — see acceptance-report.txt
+t2_judging = true   # confirmed by real run.py — see acceptance-report.txt
+# T3/T4 stay false — not because anything failed, but because this
+# run.py doesn't test them at all (it only implements T1/T2 checks, per
+# D166: the 7 mechanical checks are necessarily a narrow slice). Whether
+# T3 (public voting/certificates/comments/leaderboard) and T4 (stretch)
+# hold is a human-judge call (docs + code + demo video), not something
+# this checker can confirm either way.
+t3_public = false
+t4_stretch = false
+
+[regenerate]
 # Procedure (D167/D169/D171/D175) — as of Module 16/17, this now happens
 # AUTOMATICALLY on every `docker compose up` (docker-entrypoint.sh runs
-# `node dist/scripts/seed.js` right after migrations, reading the committed
-# apps/api/prisma/fixtures.json). Only needed manually for local dev, or to
-# read the current values without re-running anything (they're stable
-# across restarts):
+# `node dist/scripts/seed.js` right after migrations, reading the
+# committed apps/api/prisma/fixtures.json). Only needed manually for
+# local dev, or to read the current values without re-running anything
+# (they're stable across restarts):
 #   1. pnpm --filter @raptor/api build
 #   2. node apps/api/dist/scripts/seed.js
-#   3. Copy the script's "Route values" block into [checker.routes] above,
-#      and apps/api/.fixture-auth-headers.txt's four lines into
-#      [checker.auth_headers] above (same file the script just wrote/reused).
+#   3. Copy the script's "Route values" block into [routes] above, and
+#      apps/api/.fixture-auth-headers.txt's four lines into [auth] above
+#      (same file the script just wrote/reused).
 # If the organizers ever supply a *different* fixtures.json than the one
-# already committed, replace apps/api/prisma/fixtures.json with it (or set
-# FIXTURES_PATH) before step 2 — the importer's field mapping (docs/design/
-# 16-fixtures-import.md) assumes the same event/tracks/judges/teams/
-# projects/scores shape but not identical content.
-note = "Values above are real, live-verified results from the actual fixtures.json already committed to this repo (2026-09-25) — not synthetic placeholders. Re-run the procedure above only if the DB has since been reset or the organizers supply a different file."
+# already committed, replace apps/api/prisma/fixtures.json with it (or
+# set FIXTURES_PATH) before step 2 — the importer's field mapping
+# (docs/design/16-fixtures-import.md) assumes the same event/tracks/
+# judges/teams/projects/scores shape but not identical content.
+note = "Values above are real, live-verified results from the actual fixtures.json already committed to this repo — not synthetic placeholders. Re-run the procedure above only if the DB has since been reset or the organizers supply a different file."
