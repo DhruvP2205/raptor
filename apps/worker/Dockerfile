@@ -25,16 +25,27 @@ FROM deps AS build
 COPY tsconfig.base.json ./
 COPY packages/crypto packages/crypto
 COPY apps/worker apps/worker
-COPY apps/api/prisma apps/api/prisma
+# Copied into apps/worker's own tree, not left at apps/api/prisma — a
+# real `docker build` (this note dated after the first one that ran)
+# found that `pnpm --filter @raptor/worker prisma:generate` (which
+# shells out to `prisma generate --schema=../api/prisma/schema.prisma`)
+# fails in this stage specifically: apps/api has no node_modules
+# installed here (only worker's deps were), so Prisma's project-root
+# inference walks up from the schema file, finds nothing installable,
+# and falls into a doomed auto-install attempt
+# (`ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL`). Works fine in local dev (a
+# root `pnpm install` gives apps/api real node_modules too) — this is
+# Docker-build-specific, so the fix lives here, not in the package.json
+# script real local dev still uses correctly.
+COPY apps/api/prisma apps/worker/prisma
 RUN pnpm --filter @raptor/crypto build
-RUN pnpm --filter @raptor/worker prisma:generate
+RUN cd apps/worker && ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
 RUN pnpm --filter @raptor/worker build
 RUN pnpm deploy --filter @raptor/worker --prod /repo/out/worker
 # pnpm deploy produces an isolated tree with no ../api sibling, so the
-# schema (still only living in apps/api/prisma, the one canonical
-# location — see that file's own header comment) has to be copied in
-# before this deployed copy can regenerate its own client against it.
-RUN cp -r /repo/apps/api/prisma /repo/out/worker/prisma
+# schema has to be copied in before this deployed copy can regenerate
+# its own client against it.
+RUN cp -r /repo/apps/worker/prisma /repo/out/worker/prisma
 RUN cd /repo/out/worker && ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
 
 FROM node:22-alpine AS runtime

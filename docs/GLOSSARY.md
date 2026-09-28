@@ -437,3 +437,58 @@ once it became clear email matching already covers the common case
 and every alternative added real cost for a narrow remaining slice.
 Anything email doesn't catch gets a static "contact an admin" note,
 with no linking feature built for that path yet.
+
+**`.dogfood.toml`**
+A new required root file (D170), distinct from every other project
+deliverable — holds the checker's connection details: `base_url`,
+claimed tiers plus a one-sentence pitch, four seed-printed auth
+headers (see **seed-time auth bootstrap** below), and five route
+paths on our own API (`gallery`, `submit`, `judge_scores`,
+`peer_scores`, `csv_export`). Not a config file real users or the
+running application ever read — it exists purely for the external
+`run.py` checker to know where to send its seven requests.
+
+**`fixtures.json` / the fixtures importer**
+`fixtures.json` is organizer-supplied fake data (event, tracks,
+judges, teams, projects, scores) in a flatter shape than our own
+schema, committed at `apps/api/prisma/fixtures.json`. The **fixtures
+importer** (D167, Module 16, `apps/api/src/scripts/fixtures-import.ts`)
+loads it — a direct-write path that materializes `Submission`/`Score`/
+`JudgeAssignment` rows (plus `SubmissionVerification`/`JudgeReview`/
+`ScoreRevision`) straight from the fixture, deliberately bypassing
+Module 6's verification pipeline and Module 7's assignment gate, since
+the fixture's repo URLs aren't real and the checker runs with no
+network access. Runs automatically on every boot via
+`apps/api/src/scripts/seed.ts` (D171), idempotent via
+**`FixtureImportRecord`** (see `DATA-MODEL.md` §16). Never confuse this
+with the normal, real-user submission/judging pipeline — the importer
+exists solely to satisfy the checker's need for pre-existing data at
+boot, and touches nothing else.
+
+**`run.py` / `acceptance-report.txt` / "the seven checks"**
+`run.py` is the organizer-supplied checker program — makes exactly
+seven HTTP requests against our portal (three at T1: public gallery,
+gallery shows a fixture project, a closed event refuses a late
+submission; four at T2: a judge reads their own scores, a judge is
+refused a peer's scores, a participant is refused judge scores, an
+organizer can export CSV) and prints a pass/fail report.
+`acceptance-report.txt` is that report's output, committed verbatim,
+failures included — never edited or filtered before committing.
+
+**Seed-time auth bootstrap**
+The checker never logs in (D169) — it expects our seed script to
+print one static, attachable header per fixture role (`organizer`,
+`judge_a`, `judge_b`, `participant`) when the portal boots. This is a
+fixed convenience for exactly four checker-facing identities, entirely
+separate from Module 1's real session/login system — a real user
+never sees or uses these headers.
+
+**`peer_scores` route**
+The single most consequential entry in `.dogfood.toml` — the URL that
+would return judge A's scores, requested by the checker *as judge B*,
+expecting a 401/403. Explicitly the check called out as costing the
+most points if it fails, and explicitly must be enforced in the
+backend (`EventRoleGuard` + `JudgeAssignment`-scoped checks, D62) —
+hiding a peer's scores only in the frontend template, while the
+backend still returns them, is exactly the failure mode this check
+exists to catch.

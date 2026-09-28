@@ -792,7 +792,36 @@ decided)
 
 - Event/Track/Prize descriptions are stored as markdown — directly
   exportable as plain text with no lossy HTML-to-text conversion needed.
-- CSV export at every pipeline stage is a stated brief requirement;
-  concrete field mappings will be added here once the export module is
-  designed.
+- CSV export at every pipeline stage is a stated brief requirement,
+  confirmed as one of exactly seven mechanically-checked behaviors at
+  T2 (D168), and now implemented: `GET /events/:eventId/export/
+  submissions.csv` (`apps/api/src/export/`), one row per
+  `everSubmitted: true` submission — `submissionId`, `title`,
+  `submissionType`, `team`/solo-user display name, `trackIds`,
+  `verificationDecision`, `completedReviews`, and a raw
+  (unnormalized) average score computed directly from `Score` rows,
+  deliberately independent of the results/normalization pipeline so
+  it returns real data at any point in an event's life.
 - Bulk import/export (T4) not yet designed.
+- **Module 16 (Fixtures Import, D167) — the acceptance-checker's
+  `fixtures.json` importer.** Distinct from the general bulk-import
+  path above — a narrower, direct-write loader for one fixed fixture
+  shape (`event`/`tracks`/`judges`/`teams`/`projects`/`scores`,
+  organizer-supplied ids), which bypasses `SubmissionVerification`
+  (Module 6) and normal `JudgeAssignment` creation (Module 7)
+  entirely. Implemented in `apps/api/src/scripts/fixtures-import.ts`,
+  invoked from `apps/api/src/scripts/seed.ts` on every boot — see
+  `docs/design/16-fixtures-import.md` for the full field mapping,
+  including the resubmission-collapse (Section 4b) and duplicate
+  -team-name (Section 4a, corrected per D172) rules the real file
+  actually exercises.
+- **`FixtureImportRecord` (new table, Module 16)** — generic
+  `(fixtureType, fixtureId) -> internalId` idempotency map so
+  re-running the seed step (container restart) upserts fixture
+  entities rather than duplicating them. `fixtureType` values in use:
+  `event`, `track`, `judge`, `team`, `submission` (keyed by the
+  fixture's *team* id, not a project id, since a submission can
+  collapse from more than one fixture project — Section 4b),
+  `criterion` (keyed by the criterion's key string, e.g.
+  `"functionality"`), `assignment` (keyed by
+  `${judgeFixtureId}:${teamFixtureId}`).

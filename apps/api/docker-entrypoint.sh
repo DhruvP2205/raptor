@@ -27,4 +27,10 @@ fi
 # this shouldn't need to know `prisma` exists.
 ./node_modules/.bin/prisma migrate deploy
 
+# Module 16 (Fixtures Import), D171/D169 — seed step, run on every boot
+# alongside migration. Idempotent (FixtureImportRecord); a no-op if
+# apps/api/prisma/fixtures.json isn't present. Prints the checker's
+# auth headers/routes to stdout (docker compose logs api).
+node dist/scripts/seed.js
+
 exec node dist/main.js

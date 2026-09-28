@@ -1668,3 +1668,29 @@ model Comment {
 
   @@index([submissionId])
 }
+
+// Module 16 (Fixtures Import) — see docs/design/16-fixtures-import.md
+// Section 2. Idempotency map from one fixture entity to the internal row
+// it was materialized as, so re-running the seed step (container
+// restart) upserts rather than re-creating/duplicating rows. Generic on
+// purpose: covers event/track/judge/team/submission/criterion/assignment
+// fixture entities with one table rather than a bolt-on column per model
+// that would only ever be populated by this one boot-time mechanism.
+model FixtureImportRecord {
+  id String @id @default(uuid())
+
+  // e.g. "event" | "track" | "judge" | "team" | "submission" |
+  // "criterion" | "assignment" — see fixtures-import.ts for the exact
+  // set in use. "submission" and "assignment" use a synthesized
+  // fixtureId (team id; `${judgeFixtureId}:${teamFixtureId}`), not a
+  // literal fixture-file id, since a submission/assignment doesn't
+  // correspond 1:1 with a single fixture project entry once the
+  // resubmission-collapse rule (Section 4b) applies.
+  fixtureType String
+  fixtureId   String
+  internalId  String
+
+  createdAt DateTime @default(now())
+
+  @@unique([fixtureType, fixtureId])
+}

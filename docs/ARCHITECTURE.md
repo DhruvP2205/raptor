@@ -270,9 +270,75 @@ still has **no stage doc at all**:
   (D64). Revisit before claiming Module 2 fully done.
 - Bulk certificate download/export (D40) — deliberately optional/
   dropped scope, not something the locked Module 12 stage doc requires.
-- REST API/webhooks, bulk import/export (which Global Ranking's
-  historical-backfill path now depends on, per D154), pairwise judging
-  mode, normalization proof, threat model doc, OpenAPI publication
+- REST API/webhooks, the *general* bulk import/export feature (T4 —
+  distinct from Module 16's narrow fixtures.json path, which Global
+  Ranking's historical-backfill path now depends on, per D154),
+  pairwise judging mode, normalization proof, threat model doc,
+  OpenAPI publication
+- **A general seed step producing a "rich demo event" for a human
+  judge to click around** — assumed already-built by both this doc and
+  `docs/design/16-fixtures-import.md` §2, discovered not to exist at
+  all when Module 16 was built (D171). What *does* exist now
+  (`apps/api/src/scripts/seed.ts`) is the minimal fixture-import path
+  only, not this broader demo dataset.
 
-Each will get its own `stages/NN-name.md` following the same format as
-every module locked so far before any code is written against it.
+Resolved since the last update to this list — no longer undesigned:
+**the `fixtures.json` bulk-importer (D167, Module 16)**, **CSV export
+(D168)**, **seed-time auth-header bootstrap (D169)**, and
+**`.dogfood.toml` itself (D170)** — see §9 below for where each landed.
+
+Each remaining item will get its own `stages/NN-name.md` following the
+same format as every module locked so far before any code is written
+against it.
+
+---
+
+## 9. Acceptance checking (`run.py`) integration points
+
+New as of the official spec review (D166–D170) — `dogfoodhack.com/
+spec/` defines a narrow, fully mechanical checking layer distinct from
+(and much smaller than) the fourteen-plus modules already built. Three
+concrete integration points this system needs — all three now built
+(Module 16, D171-D173):
+
+1. **Seed-time header printing (D169) — implemented.**
+   `apps/api/src/scripts/seed.ts`, invoked directly from
+   `docker-entrypoint.sh` right after `prisma migrate deploy` (every
+   boot, not a separate manual step). No general seed step existed
+   before this module despite this section previously assuming one
+   did — see D171. Prints the four `organizer`/`judge_a`/`judge_b`/
+   `participant` `Cookie: raptor_session=...` headers to stdout on
+   every boot; entirely separate from Module 1's real session system,
+   which the checker never calls.
+2. **The fixtures import path (D167) — implemented.**
+   `apps/api/src/scripts/fixtures-import.ts`, called from `seed.ts`.
+   A direct-write loader, not a route real users ever call, that
+   takes the organizers' real `fixtures.json` (committed at
+   `apps/api/prisma/fixtures.json`, the documented path) and
+   materializes `Event`/`Track`/`User`/`EventMembership`/`Team`/
+   `TeamMembership`/`Submission`/`SubmissionVerification`/
+   `JudgeAssignment`/`Score`/`JudgeReview`/`ScoreRevision` rows
+   directly — bypassing Module 6's verification pipeline and Module
+   7's assignment gate entirely, since fixture repo URLs are fake and
+   the checker runs with no network access. Idempotent across
+   restarts via the new `FixtureImportRecord` table (see
+   `DATA-MODEL.md` §16). Live-verified against the real file (40
+   teams, 3 with duplicate names; 41 projects, 1 team's pair
+   collapsing to a single submission per D172/Section 4b).
+3. **A `peer_scores`-shaped endpoint — already existed, confirmed.**
+   `GET /assignments/:id` (`ScoringController`,
+   `apps/api/src/scoring/`) — ownership-checked in
+   `getOwnedAssignmentOrThrow` (`assignment.judgeId !== userId` ->
+   403 `NOT_ASSIGNMENT_OWNER`), enforced in the backend, not just a
+   hidden template. `judge_scores` and `peer_scores` in
+   `.dogfood.toml` point at the same URL by design — the check is
+   which judge's session is attached, not a different route.
+
+No new infrastructure was needed for any of the three — no new
+container, no new secret, no new network boundary. All are
+application-level code on top of the architecture already described in
+§§2–7. What Module 16's build *did* surface as a real, separate gap:
+this section's own seed-step assumption was wrong (D171) — the "rich
+demo event for a human judge" this doc and the design doc both refer to
+still doesn't exist; only the minimal fixture-import seed path does.
+

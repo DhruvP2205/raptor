@@ -1819,3 +1819,146 @@ different existing tools with different data, and the doc's flat list
 only allocated one slot for what should have been two. Confirmed:
 keep both as distinct items, matching the interim `ManageNav`
 component (already listing both separately) that this shell replaces.
+
+---
+
+## Dogfood spec discovery — the real mechanical-checking mechanism
+
+**D166 — The official spec at `dogfoodhack.com/spec/` was reviewed in
+full. It defines a narrow, fully mechanical checking system layered on
+top of the original brief's tier ladder — it does not shrink or
+redefine project scope, which remains the full platform (T1 core
+through T4 stretch, exactly as already built across Modules 1–15). Two
+files come from the organizers (`fixtures.json`, `run.py`); two come
+from us (`.dogfood.toml`, `acceptance-report.txt`). `run.py` makes
+exactly seven HTTP requests against our own portal and prints a
+pass/fail report we commit as-is.**
+Context: this is a genuinely new source of truth for how the
+automated portion of judging works, distinct from (and narrower than)
+everything the fourteen-plus module docs already cover. The seven
+checks sample a small, specific slice of T1/T2 — they do not touch
+voting, certificates, normalization's statistical defensibility, or
+the organizer shell at all. Passing all seven is necessary to not fail
+the mechanical portion outright; it is not sufficient proof of
+everything else, which still depends on a human judge reading the
+docs, the code, and the demo video.
+
+**D167 — A `fixtures.json` bulk-importer is now a confirmed, high-
+priority requirement, previously not designed at all. The organizers'
+fixture shape (`event` / `tracks` / `judges` / `teams` / `projects` /
+`scores`) is flatter than our schema and is explicitly described as
+input, not a data model to adopt — "load it, transform it, put it in
+whatever schema you can defend" is the organizers' own framing. The
+importer must materialize `Submission`/`Score`/`JudgeAssignment` rows
+directly from the fixture, bypassing Module 6's GitHub-verification
+pipeline and Module 7's assignment gate entirely for this specific
+import path.**
+Context: this bypass is not optional — the fixture's `repo_url`
+values are placeholder/fake, and the checker is explicitly stated to
+run with the network off, so any attempt to run real GitHub
+verification against fixture data would fail or hang. The normal
+user-driven pipeline (register → submit → verify → assign → score)
+stays completely unchanged for real usage; this importer is a
+separate, direct-write path that exists solely to satisfy the
+checker's need for pre-existing judge/project/score data at boot.
+
+**D168 — CSV export (Module 8's progress-adjacent tooling, previously
+the single most-flagged undesigned backend gap) is confirmed as one
+of exactly seven mechanically-checked behaviors, at T2 — an organizer
+calling the configured `csv_export` route must receive HTTP 200 with
+a real CSV body. This elevates it from "should design soon" to
+"blocks the acceptance checker from passing T2 at all if missing."**
+
+**D169 — A seed-time static auth-header bootstrap is required and
+previously undesigned. The checker never logs in — it expects our own
+seed script to print one working, attachable header per role
+(`organizer`, `judge_a`, `judge_b`, `participant`) when the portal
+boots, which `.dogfood.toml` then records verbatim. This is
+deliberately decoupled from Module 1's real session/login system —
+the checker's headers are a fixed, boot-time convenience for exactly
+four fixture identities, not a parallel authentication mechanism real
+users ever touch.**
+
+**D170 — `.dogfood.toml` is a new required root file, not previously
+tracked as a deliverable alongside `README.md`/`ARCHITECTURE.md`/
+`DATA-MODEL.md`/`JUDGING.md`/`LICENSE`. It holds: `base_url`, claimed
+tiers plus a one-sentence pitch (checked against what the acceptance
+report actually verifies — overclaiming a tier is explicitly called
+out as the one thing that costs real points), the four seed-printed
+auth headers (D169), and five route paths on our own API: `gallery`,
+`submit`, `judge_scores`, `peer_scores`, `csv_export`.**
+Context: `peer_scores` specifically is the URL that would return
+judge A's scores — the checker requests it as judge B and expects a
+401/403, which is the single check explicitly called out as costing
+the most points if it fails, and explicitly must be enforced in the
+backend, not hidden only in a template. This is architecturally
+already correct in our design (`EventRoleGuard` +
+`JudgeAssignment`-scoped checks, D62) — the remaining work is
+confirming our real route surface has a clean single-judge-scores
+endpoint shape this can point at directly.
+
+---
+
+## Module 16 (Fixtures Import) — built against docs/design/16-fixtures-import.md
+
+**D171 — No general seed step (`prisma db seed` or equivalent) existed
+anywhere in this codebase before this module, even though the design
+doc's own Section 2 assumes one already runs "on every `docker compose
+up` per Module 1's boot sequence."** Built here as the minimum real
+infrastructure the doc's assumption requires: `apps/api/src/scripts/
+seed.ts`, invoked directly from `docker-entrypoint.sh` right after
+`prisma migrate deploy` (not through Prisma's own `db seed` CLI
+wrapper — that would need ts-node/tsx as a new dependency for one
+script; calling the compiled `dist/scripts/seed.js` matches this
+project's existing script-execution convention instead, see
+`bootstrap-admin.ts`). **What this does NOT do: build the "rich demo
+event... showing off every module for a human judge clicking around"**
+the doc describes as already existing seed content. That remains a
+real, separate, not-yet-designed gap — flagged rather than quietly
+built as a large add-on nobody asked for in this pass. One consequence
+flows from this: the doc's Section 3 "grant our own existing seeded
+demo-organizer account" also didn't have an account to grant — `seed.ts`
+creates one minimal, fixed-identity organizer (`demo.organizer@raptor.local`)
+solely so `.dogfood.toml`'s organizer header has a real account, not the
+broader demo-organizer persona a rich seed would eventually own.
+
+**D172 — Corrected docs/design/16-fixtures-import.md Section 4a's factual
+claim that team-name uniqueness "has to live at the application layer...
+not a database constraint."** It already is a database constraint
+(`Team` model, `@@unique([eventId, name])`, present since Module 4) —
+verified directly against `schema.prisma`, not assumed. The doc's
+conclusion (duplicate fixture team names are a genuine case the importer
+must handle) was still correct; only its reasoning about *why* was wrong.
+Resolved without loosening Module 4's already-shipped, already-tested
+uniqueness guarantee for real user-created teams: the importer
+disambiguates a colliding fixture team name with a `" (2)"`/`" (3)"`
+suffix before writing the `Team` row (`disambiguateTeamName`,
+`fixtures-import.ts`), tracked back to the fixture's own team id via
+`FixtureImportRecord` regardless of what display name was actually
+persisted. Confirmed against the real file: `StillTrail` (×3),
+`AmberSwitch` (×2), `OpenSignal` (×2) all import as distinct teams with
+no constraint violation.
+
+**D173 — Fixture judges' own `tracks` field (per-judge track list in
+the real file) is not mapped to `EventMembership.trackIds` (Module 2's
+judge track-scoping).** Flagged as an inference, not a literal
+instruction — the design doc's Section 3 field-mapping table doesn't
+mention this field at all, and none of the seven mechanically-checked
+behaviors exercise track-scoped assignment visibility (Section 5's own
+"what this explicitly does not do"). Smallest reasonable interpretation:
+leave every fixture-imported judge unscoped (sees every track), rather
+than guess at a mapping the doc never specified.
+
+**Live-verified end-to-end against the real, official `fixtures.json`**
+(8 tracks, 30 judges, 40 teams — 3 with duplicate names, 41 projects —
+one team with two collapsing to one submission, 126 scores across 3
+criteria) on a real local Postgres: exactly 40 teams/submissions
+created (no constraint errors), the `tm_07` collapse kept the later
+project's content with all 6 real judges' scores correctly
+deduped/preserved per Section 4b's rule, rubric criteria split
+33/33/34, running the seed step twice produced identical row counts
+(idempotent, zero duplication), and all seven of `run.py`'s mechanical
+checks (gallery load + contents, late-submission rejection,
+judge-own-scores, peer-scores-refused, participant-refused-judge-scores,
+organizer CSV export) passed against a live-booted API using the
+seed-printed session cookies.
