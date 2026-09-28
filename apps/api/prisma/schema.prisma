@@ -89,19 +89,100 @@ enum AccountType {
   ORGANIZER
 }
 
-// Module 2 — deliberately minimal. Just enough to anchor
-// EventMembership and provide the judge-invitation deadline
-// (eventStartsAt). Module 3 (Event Management) extends this additively
-// — slug, description, status/phase, the full timeline, tracks, prizes,
-// file uploads. Nothing here should be read as Module 3's design; see
-// D59 in docs/DECISIONS.md for why this exists now at all.
+// Module 2 introduced this as a deliberately minimal anchor (D59); this
+// is now Module 3's (docs/stages/03-event-management.md) full shape.
+//
+// trackAttachmentMode (Module 5) and maxTeamSize (Module 4) are
+// deliberately NOT here yet, even though DATA-MODEL.md's cumulative
+// narrative lists them under "Events" — they belong to the modules that
+// actually consume them, not to this one, per the same additive-growth
+// principle D59 established for Event itself. Same for eventClosedAt:
+// it's used only by voting-round-restart logic (not yet a locked stage
+// doc) and isn't part of Module 3's own validation chain below.
 model Event {
-  id            String   @id @default(uuid())
-  name          String
-  eventStartsAt DateTime
-  createdAt     DateTime @default(now())
+  id   String @id @default(uuid())
+  name String
+
+  // Editable only while status = DRAFT (D17-equivalent, Section 3.2).
+  // Auto-generated from name at creation (slugified), organizer can
+  // override while still DRAFT — see D68 in docs/DECISIONS.md for why
+  // this is inferred rather than stated outright.
+  slug String @unique
+
+  // Markdown source, never rendered HTML — sanitized identically on
+  // every render (preview and production), see Section 6. Optional:
+  // nothing in this stage's doc requires a description before publish.
+  description String?
+
+  posterUrl    String?
+  thumbnailUrl String?
+
+  status EventStatus @default(DRAFT)
+
+  // Timeline — all required at creation (Section 3.3's ordering chain
+  // can't be validated against a partially-set timeline). UTC.
+  registrationOpensAt    DateTime
+  registrationClosesAt   DateTime
+  eventStartsAt          DateTime
+  submissionsOpenAt      DateTime
+  submissionsCloseAt     DateTime
+  eventEndsAt            DateTime
+  resultsAnnounceAt      DateTime
+  votingOpensAt          DateTime
+  votingClosesAt         DateTime
+  votingWinnerAnnounceAt DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   memberships EventMembership[]
+  tracks      Track[]
+  prizes      Prize[]
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+  DELETED
+}
+
+model Track {
+  id     String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  prizes Prize[]
+
+  // Unique per event, not globally (Section 5).
+  @@unique([eventId, name])
+}
+
+enum PrizeDecidedBy {
+  JUDGES
+  PUBLIC_VOTE
+}
+
+model Prize {
+  id      String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  trackId String?
+  track   Track?  @relation(fields: [trackId], references: [id], onDelete: SetNull)
+
+  name       String
+  rank       Int
+  decidedBy  PrizeDecidedBy
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum EventRole {

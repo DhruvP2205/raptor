@@ -6,18 +6,19 @@ human-readable narrative version of `apps/api/prisma/schema.prisma`.
 **Status note:** the schema described below is the cumulative target —
 every decision locked through Module 5 (Submission Management).
 `apps/api/prisma/schema.prisma` is built up **incrementally, stage by
-stage**, matching each stage doc's own declared scope. **Modules 1 and 2
-are implemented** (`User`, `Session`, `EventMembership`, `AuditLog`, and
-a deliberately minimal `Event` — see D59 in `DECISIONS.md` for why
-`Event` exists already even though full Event Management is Module 3).
-Everything from Module 3 onward (the real `Event` fields below —
-`slug`, `description`, `status`/`phase`, the full timeline, `Track`,
-`Prize` — plus `Team`, `Submission`) is still narrative-only; the live
-schema is intentionally behind this document for those. If the live
-schema and a field documented here disagree **and the owning module has
-already been implemented**, that's a bug. Certificates and voting are
-discussed extensively in `DECISIONS.md` but don't have a finalized stage
-doc yet, so their tables are sketched here as forward-looking and may
+stage**, matching each stage doc's own declared scope. **Modules 1, 2,
+and 3 are implemented** (`User`, `Session`, `EventMembership`,
+`AuditLog`, the full `Event` table, `Track`, `Prize`). `Event` started
+as a deliberately minimal anchor in Module 2 (D59) and Module 3 grew it
+additively to the full shape below — `trackAttachmentMode` (Module 5)
+and `maxTeamSize` (Module 4) are still deliberately absent, along with
+`eventClosedAt` (voting, no locked stage doc yet). `Team` and
+`Submission` are still narrative-only; the live schema is intentionally
+behind this document for those. If the live schema and a field
+documented here disagree **and the owning module has already been
+implemented**, that's a bug. Certificates and voting are discussed
+extensively in `DECISIONS.md` but don't have a finalized stage doc yet,
+so their tables are sketched here as forward-looking and may
 still shift.
 
 ---
@@ -84,47 +85,59 @@ is ever consulted for event-scoped actions.
 
 ### `Event`
 
-**Currently implemented (Module 2, D59): just `id`, `name`,
-`eventStartsAt`, `createdAt`.** Everything else in this section —
-`slug`, `description`, `status`/`phase`, `trackAttachmentMode`,
-`maxTeamSize`, the rest of the timeline, and the validation chain below
-— is Module 3's design, not yet in the Prisma schema. Module 3 extends
-the same table additively; none of it replaces what's there now.
+**Implemented (Module 3).** `trackAttachmentMode` (Module 4) and
+`maxTeamSize` (Module 5) are **not** in the Prisma schema yet — they
+belong to the modules that actually consume them, same additive-growth
+principle as `Event` itself (D59). `eventClosedAt` is also absent — it's
+only used by voting-round-restart logic, which has no locked stage doc
+yet. `phase` adds a synthetic `NOT_STARTED` value (D69) for a PUBLISHED
+event sitting before `registrationOpensAt`, not named in the stage
+doc's own phase list but required by its explicit "early hype, before
+registration opens" supported use case (Section 8).
 
 | Field | Type | Notes |
 |---|---|---|
-| `id`, `slug` (unique) | | Slug editable only while `status = DRAFT` (D17) |
-| `name`, `description` | markdown string | Sanitized on every render (D18) |
-| `posterUrl`, `thumbnailUrl` | nullable | Local-disk-served, re-encoded on upload (D19) |
-| `status` | enum: `DRAFT \| PUBLISHED \| ARCHIVED \| DELETED` | Manual, actor-controlled (D15) |
-| `trackAttachmentMode` | enum: `NONE \| SINGLE \| MULTIPLE` | Drives the submission form's track field (D29) |
-| `minTeamSize` — **removed** | — | No such field; a team can be admin-only (D25) |
-| `maxTeamSize` | int | Organizer-configurable, admin counts toward the total |
-| Timeline fields (all `timestamptz`, UTC) | | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`, `eventClosedAt` |
-| *(computed, not stored)* `phase` | enum | Derived from `now()` vs. the timeline fields on every read (D15) |
+| `id`, `slug` (unique) | | Slug editable only while `status = DRAFT` (D17). Auto-generated from `name` if not given (D68). |
+| `name`, `description` | markdown string, nullable | Sanitized on every render (D18), through `MarkdownService` — the same function for preview and production |
+| `posterUrl`, `thumbnailUrl` | nullable | Local-disk-served, re-encoded on upload (D19, D71 — always re-encoded to JPEG regardless of input format) |
+| `status` | enum: `DRAFT \| PUBLISHED \| ARCHIVED \| DELETED` | Manual, actor-controlled (D15). `DELETED` reachable from DRAFT or PUBLISHED, not ARCHIVED (D70). |
+| ~~`trackAttachmentMode`~~ | — | **Not yet implemented** — Module 5's field, not Module 3's |
+| ~~`minTeamSize`~~ | — | No such field; a team can be admin-only (D25) |
+| ~~`maxTeamSize`~~ | — | **Not yet implemented** — Module 4's field, not Module 3's |
+| Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`. (`eventClosedAt` not yet implemented — voting's field, no locked stage doc.) |
+| *(computed, not stored)* `phase` | `EventPhase \| null` | Derived from `now()` vs. the timeline fields on every read (D15); `null` for non-PUBLISHED, `NOT_STARTED` for PUBLISHED-but-pre-registration (D69) |
 
-**Validation, enforced on every create and every edit:**
+**Validation, enforced on every create and every edit** — see
+`apps/api/src/events/utils/event-timeline.ts`:
 ```
 registrationOpensAt < registrationClosesAt <= eventStartsAt
   < submissionsOpenAt < submissionsCloseAt <= eventEndsAt
   < resultsAnnounceAt < votingOpensAt < votingClosesAt
   < votingWinnerAnnounceAt
 ```
+PUBLISHED adds two more rules per field: immutable once its own
+boundary has passed, and never movable earlier than its current value
+while still pending.
 
 ### `Track`
 
+Implemented (Module 3). No delete — removal semantics are explicitly
+unresolved in the stage doc (D74).
+
 | Field | Type | Notes |
 |---|---|---|
 | `id`, `eventId` | | |
-| `name` | string | Unique per event, not globally |
-| `description` | markdown | |
+| `name` | string | Unique per event, not globally (`@@unique([eventId, name])`) |
+| `description` | markdown, nullable | Same sanitized-render pattern as `Event.description` |
 
 ### `Prize`
 
+Implemented (Module 3). No delete, same reasoning as `Track` (D74).
+
 | Field | Type | Notes |
 |---|---|---|
 | `id`, `eventId` | | |
-| `trackId` | nullable | |
+| `trackId` | nullable | Must belong to the same event — cross-event references rejected at the application layer |
 | `name`, `rank` | | |
 | `decidedBy` | enum: `JUDGES \| PUBLIC_VOTE` | The two prize tracks are computed by entirely different queries and revealed at different times (`resultsAnnounceAt` vs. `votingWinnerAnnounceAt`) |
 

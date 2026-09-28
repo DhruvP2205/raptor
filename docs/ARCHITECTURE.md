@@ -28,9 +28,11 @@ implies.
 | Frontend framework | Next.js | Same language as backend; good SSR for public/shareable pages (gallery, certificates) |
 | Database | PostgreSQL | Strong JSON column support (`payloadJson`, `metadataJson`), array columns (`trackIds`), proper `timestamptz` for the UTC timeline model |
 | ORM | Prisma | Typed schema doubles as a machine-checked version of `DATA-MODEL.md`; safe migrations |
-| Cache / queues | Redis | Backs rate limiting, CAPTCHA/PoW challenge storage, and any future job queue — one piece of infra, several uses |
+| Cache / queues | Redis | Backs rate limiting (live as of Module 3 — upload endpoints, D72), CAPTCHA/PoW challenge storage, and any future job queue — one piece of infra, several uses |
 | Password hashing | argon2 | Memory-hard, current best-practice default |
 | Sessions | Opaque server-side tokens, HttpOnly cookie | Instantly revocable (unlike a JWT), and never exposed to JS — mitigates token theft via XSS |
+| Markdown | `markdown-it` + `sanitize-html` | One render function (`MarkdownService`), used identically for preview and production everywhere markdown is stored (Module 3) |
+| Image processing | `sharp` + `file-type` | Magic-byte detection, header-only dimension read before full decode, re-encode (strips EXIF/polyglots) — Module 3's upload pipeline |
 | API docs | `@nestjs/swagger` | Generates OpenAPI directly from the same decorators used for request validation — one source of truth, feeds the API-First bonus |
 | SVG→PDF (certificates) | Pure-JS conversion (e.g. `svg-to-pdfkit`) | No headless-browser dependency — keeps the image light and laptop-friendly |
 | CAPTCHA / abuse resistance | Self-built (visible fallback + invisible proof-of-work) | No third-party service call, satisfies the no-hosted-dependency rule |
@@ -101,6 +103,13 @@ secrets; there is exactly one mail-sending code path, used identically in
 every environment, with `TEST_MODE` (Module 1) as the only environment
 -specific branch, and that branch logs rather than requiring a second
 piece of infrastructure.
+
+**File uploads (Module 3)** are stored on the `uploads-data` volume
+(`/app/uploads` in the `api` container), never on a path Express
+statically serves — the only way a stored file is ever reachable is
+through the dedicated `GET /uploads/:id` route, which re-sniffs the
+Content-Type from the file's actual bytes at serve time rather than
+trusting anything recorded at upload time.
 
 ---
 

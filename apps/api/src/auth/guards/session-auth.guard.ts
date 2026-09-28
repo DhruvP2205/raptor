@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
+import { OPTIONAL_AUTH_KEY } from '../decorators/optional-auth.decorator';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SESSION_COOKIE_NAME, SessionService } from '../session.service';
 
@@ -38,14 +39,21 @@ export class SessionAuthGuard implements CanActivate {
       return true;
     }
 
+    const isOptional = this.reflector.getAllAndOverride<boolean>(
+      OPTIONAL_AUTH_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
     const req = context.switchToHttp().getRequest<Request>();
     const rawToken = req.cookies?.[SESSION_COOKIE_NAME];
     if (!rawToken) {
+      if (isOptional) return true;
       throw new UnauthorizedException('Not logged in.');
     }
 
     const session = await this.sessions.resolveByRawToken(rawToken);
     if (!session) {
+      if (isOptional) return true;
       throw new UnauthorizedException('Session expired or invalid.');
     }
 

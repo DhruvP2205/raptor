@@ -675,3 +675,95 @@ duration (`argon2.verify`'s native export isn't spy-able — attempting
 `jest.spyOn` on it throws `Cannot redefine property`) rather than call
 count; the token-hash fix has a dedicated "never returned to a caller"
 test suite covering every public method.
+
+---
+
+## Event Management implementation (Module 3, filled in during build)
+
+**D68 — `Event.slug` is auto-generated from `name` (slugified) if not
+explicitly provided, and is otherwise a normal organizer-editable field
+while the event is still DRAFT.**
+Context: the stage doc says slug is "editable only while `status =
+DRAFT`" — implying it's a real, edited field, not purely derived and
+frozen forever like `Team.name` (D21) — but never says how it's
+produced initially. Auto-generating from `name` (with a numeric suffix
+on collision — `resolveUniqueSlug()`) matches the common pattern for
+this kind of URL slug and means an organizer who doesn't care can
+ignore the field entirely at creation time.
+
+**D69 — A `NOT_STARTED` phase value fills the gap between a PUBLISHED
+event and `registrationOpensAt`, which the stage doc's phase list
+doesn't name.**
+Context: the doc explicitly supports "an organizer wanting an upcoming
+event visible for early hype, before registration even opens" (Section
+8), but its phase enum starts at `REGISTRATION_OPEN` — there's no named
+phase for a PUBLISHED event sitting before that boundary. Reused
+`NOT_STARTED` rather than inventing new vocabulary, since the doc
+already uses that exact term for a DRAFT event's phase ("NOT_STARTED /
+null") — `computeEventPhase()` still returns `null` for DRAFT
+specifically, so the two states remain distinguishable (a frontend can
+tell "not published at all" apart from "published, just hasn't started
+yet").
+
+**D70 — An event can be soft-deleted directly from DRAFT, not only from
+PUBLISHED.**
+Context: the status diagram (`DRAFT → PUBLISHED → ARCHIVED ↘ DELETED`)
+visually branches DELETED off PUBLISHED only. Blocking a DRAFT event —
+one nobody has registered, submitted, or been invited against — from
+ever being abandoned seemed like an unintended gap in the diagram
+rather than a deliberate restriction, especially given CLAUDE.md's
+general "nothing gets silently destroyed, but abandoning unstarted work
+should be easy" spirit elsewhere (e.g. Team deletion, Module 4). Not
+allowed from ARCHIVED, which is treated as a settled terminal state.
+
+**D71 — Uploaded posters/thumbnails are always re-encoded to JPEG,
+regardless of whether the input was JPEG, PNG, or WebP.**
+Context: Section 7.2 says files are "re-encoded fresh to a clean
+JPEG/PNG/WebP" — one of the three, not necessarily the original. Always
+producing JPEG keeps the serving route's behavior simple and
+predictable rather than needing to track and reproduce the original
+format per stored file. Trade-off: a PNG uploaded for its transparency
+loses that (flattened during re-encode) — acceptable for event
+posters/thumbnails, which are photos in practice, not graphics relying
+on an alpha channel.
+
+**D72 — Upload rate limiting (Redis-backed) fails OPEN, not closed, if
+Redis is unreachable.**
+Context: this is anti-abuse, not authorization — CLAUDE.md's
+fail-closed stance is specifically about authorization checks (a role
+guard failing open would be a real vulnerability). Losing the rate
+-limit guard temporarily during a Redis outage is an acceptable
+degradation; silently blocking every upload because an unrelated piece
+of infra is down is not. 20 uploads/hour/user is an arbitrary but
+reasonable default — the stage doc requires *that* uploads are rate
+limited, not a specific number.
+
+**D73 — `sanitize-html` is pinned to an exact version (`2.13.1`, not
+`^2.13.1`) instead of a caret range.**
+Context: toolchain compatibility, not a design decision, but worth
+recording so a future `pnpm update` doesn't silently reintroduce the
+problem. `sanitize-html@2.17+` depends on `htmlparser2@12`, which
+switched to ESM-only exports with no CommonJS entry point — this
+project's apps/api is CommonJs throughout (see D2), and Jest's default
+transform pipeline can't load that package, breaking every test that
+imports `MarkdownService` transitively. `2.13.1` depends on
+`htmlparser2@^8`, the last version with a working CJS `main` export.
+
+**D74 — Tracks and Prizes have no DELETE endpoint.**
+Context: the stage doc explicitly flags track removal as unresolved
+("not resolved in this stage; flag if it comes up during Module 5") —
+prizes can reference a track, so the same caution extends to them.
+Building delete now would mean inventing the answer to a question the
+doc deliberately left open. Create and update (PATCH) are fully
+implemented for both.
+
+**Infrastructure note, not a design decision:** attempted to install
+Memurai (a Redis-compatible server for Windows) locally, the same way
+PostgreSQL was installed for Module 1 (D57). Its MSI installer failed
+with `SFXCA: Failed to create temp directory. Error code 5` inside a
+sandboxed custom action — an environment-specific obstacle, not
+something fixable from install flags. Redis-dependent code
+(`RateLimitService`, rate-limited upload endpoints) is implemented
+against a real `ioredis` client and unit-tested with a mocked one; live
+verification against a real Redis is deferred until Docker is
+available, same posture already recorded for Docker itself.

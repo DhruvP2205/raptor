@@ -10,7 +10,11 @@
 FROM node:22-alpine AS base
 # argon2 needs node-gyp build tooling if no prebuilt binary exists for
 # this platform/libc combo (musl, in this case); Prisma's query engine
-# needs openssl at both build and run time on Alpine.
+# needs openssl at both build and run time on Alpine. sharp (Module 3,
+# image re-encoding) ships a self-contained prebuilt libvips for
+# linuxmusl-x64 as of v0.32+ and shouldn't need anything extra here —
+# unverified, since this environment has no Docker; if the build stage
+# fails to resolve sharp's binary, that's the first thing to check.
 RUN apk add --no-cache python3 make g++ openssl
 RUN corepack enable
 WORKDIR /repo

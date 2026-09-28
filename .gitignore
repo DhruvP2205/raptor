@@ -19,3 +19,8 @@ Thumbs.db
 # Local AI-assistant tooling state — machine/session-specific, not
 # project state.
 .claude/
+
+# Local-dev file uploads (Module 3) — UPLOAD_DIR defaults to ./uploads
+# relative to apps/api when unset; actual stored files are runtime
+# data, never source.
+apps/api/uploads/

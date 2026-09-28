@@ -5,18 +5,28 @@ import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
 import { MailModule } from './mail/mail.module';
+import { MarkdownModule } from './markdown/markdown.module';
 import { MembershipModule } from './membership/membership.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { PrizesModule } from './prizes/prizes.module';
+import { RedisModule } from './redis/redis.module';
+import { TracksModule } from './tracks/tracks.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
     PrismaModule,
     MailModule,
+    MarkdownModule,
+    RedisModule,
     AuditModule,
     AuthModule,
     EventsModule,
     MembershipModule,
     AdminModule,
+    TracksModule,
+    PrizesModule,
+    UploadsModule,
   ],
   controllers: [AppController],
 })
