@@ -472,3 +472,24 @@ Rejected: constructing `DATABASE_URL` in TypeScript only (as originally
 written into `ARCHITECTURE.md` §5 before this module's implementation) —
 works fine for the app process itself, but leaves the separate `prisma
 migrate deploy` step with no connection string of its own.
+
+**D57 — Non-Docker local dev uses a dedicated Postgres installed
+directly on the host, on port 5433, loaded via `apps/api/.env`
+(`dotenv`), not the Docker-managed instance.**
+Context: user's explicit direction — use a real local Postgres for
+day-to-day development, keep the Docker-managed one for the "real"
+`docker compose up` path, and make sure the split is actually wired into
+env config rather than left implicit. Port 5433 (not 5432) was chosen
+deliberately so it can't collide with any other Postgres already
+running on the host — this machine happened to have an unrelated one
+already listening on 5432. `dotenv` added as a dependency, loaded as the
+first statement in `main.ts`; its default "never override an
+already-set variable" behavior is exactly what's needed so Docker's own
+`environment:` blocks always win inside a container, where no `.env`
+file exists at all (gitignored, and excluded in `.dockerignore`).
+Verified end-to-end against this real instance during Module 1's
+build: ran the actual `prisma migrate dev` (not just `validate`
+/`generate` against a placeholder URL), and a real
+signup → verify → re-verify (idempotent replay) → login →
+`/auth/me` round trip, including confirming in the database directly
+that `verificationTokenHash` is genuinely not cleared on success (D54).

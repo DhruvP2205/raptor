@@ -16,5 +16,6 @@ secrets/*.txt
 Thumbs.db
 .turbo/
 
-# Local AI-assistant tooling config — machine-specific, not project state.
-.claude/settings.local.json
+# Local AI-assistant tooling state — machine/session-specific, not
+# project state.
+.claude/

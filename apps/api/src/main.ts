@@ -1,3 +1,10 @@
+// Loads apps/api/.env into process.env for non-Docker local dev — a
+// no-op if the file doesn't exist (it never does inside the Docker
+// image; .env is gitignored and excluded in .dockerignore) and never
+// overrides a variable already set in the environment, so Docker's own
+// `environment:` blocks always win there.
+import 'dotenv/config';
+
 import { loadSecrets } from './config/load-secrets';
 
 loadSecrets();

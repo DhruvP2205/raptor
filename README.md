@@ -2,22 +2,42 @@
 
 A self-hostable, open-source hackathon submission & judging platform.
 
-**Status: early scaffold.** Design is locked module-by-module in
-`docs/stages/*.md` before any code is written against it — see
-`CLAUDE.md` for why. Nothing beyond repo/infra scaffolding exists yet;
-no feature from any stage is implemented.
+**Status: Module 1 (auth & email) implemented.** Design is locked
+module-by-module in `docs/stages/*.md` before any code is written
+against it — see `CLAUDE.md` for why. Most of the platform doesn't
+exist yet; see `docs/stages/` for what's built vs. planned.
 
 ## Running it
-
-Not runnable end-to-end yet. Once Module 1 (auth) lands, the intent is:
 
 ```
 docker compose up --build
 ```
 
-bringing up a seeded, working instance on `localhost` — no cloud
-account, no hosted database, no external service, per the project's
-no-hosted-dependency rule (see `CLAUDE.md`).
+brings up a seeded, working instance on `localhost` — no cloud account,
+no hosted database, no external service, per the project's
+no-hosted-dependency rule (see `CLAUDE.md`). **Unverified as of Module
+1** — written to match `docs/ARCHITECTURE.md`, but this repo's own
+development has happened without Docker installed; re-check this end to
+end once it is.
+
+### Local development (without Docker)
+
+The api needs its own Postgres. Convention: a dedicated local instance
+on port 5433 (not 5432, so it won't collide with anything else already
+running; not the same instance Docker Compose manages, since that one
+has no host-published port at all, by design).
+
+```
+createuser -h localhost -p 5433 -U postgres --login --pwprompt raptor
+createdb   -h localhost -p 5433 -U postgres --owner=raptor raptor
+
+cp apps/api/.env.example apps/api/.env   # fill in your own password
+pnpm --filter @raptor/api exec prisma migrate dev
+pnpm --filter @raptor/api dev
+```
+
+`apps/web`'s dev server (`pnpm --filter @raptor/web dev`) needs no
+database — it talks to the api over HTTP.
 
 ## Structure
 
