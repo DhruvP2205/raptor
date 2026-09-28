@@ -884,3 +884,61 @@ letting a brand-new, permanently-unsubmittable draft be created after
 the deadline would be a pointless loophole with no legitimate use —
 extended the same server-time-only deadline check to creation for
 consistency with every other write path.
+
+## Frontend (apps/web) implementation — cross-cutting, filled in during build
+
+**D84 — No new backend endpoint added for listing an event's Tracks/
+Prizes. The frontend reads them from `GET /events/:slug`'s existing
+`tracks`/`prizes` inline relations instead, and re-fetches that route
+after any track/prize mutation.**
+Context: discovered while building the event detail and submission-form
+UI that neither `TracksController` nor `PrizesController` has ever had a
+`GET` (Module 3's stage doc never names one). Closer inspection found
+`EventsService.getEventBySlug` already does
+`include: { tracks: true, prizes: true }` and spreads the result through
+`toPublicEvent` — so the data is already there on that one route, just
+undocumented and not surfaced anywhere before now. Every *other*
+Event-returning endpoint (list, create, update, publish, archive) omits
+this `include` and so won't have `tracks`/`prizes` on its response —
+callers needing current track/prize data must hit `GET /events/:slug`,
+not rely on a mutation's own response. Adding a dedicated list endpoint
+was the alternative; not done, since the data was already reachable
+without touching the backend at all, and a real list endpoint is easy to
+add later if a consumer other than this frontend ever needs one without
+paying for the whole event payload.
+
+**D85 — Added `GET /events/:eventId/teams/mine`, not named in
+`stages/04-team-management.md`.**
+Context: unlike tracks/prizes (D84), there was genuinely no way to
+recover this data from an existing response — `POST .../teams` (create)
+returns only the `Team` row with no roster, and `POST /teams/join`
+returns only the caller's own `TeamMembership` row, not the team or its
+other members. A participant navigating straight to their team page on
+a fresh page load (the normal case, not just right after creating/
+joining) had no endpoint to ask "what team am I on, and who else is on
+it." `TeamsService.getMyTeam` finds the caller's `TeamMembership` for
+the event, then returns the team with `members` flattened to
+`{ userId, displayName, joinedAt }` (never the raw `User` row) — mirrors
+the `/mine` convenience shape Module 5 already established for
+submissions (D80), applied to Module 4's actual gap.
+
+**D86 — `AuthProvider` tracks `mustResetPassword` as a state distinct
+from `user`, rather than treating any failed `GET /auth/me` as "logged
+out."**
+Context: found during the end-to-end UI review pass — logging in as a
+freshly-created staff account correctly redirected to `/set-password`
+(the login response itself carries `mustResetPassword`), but the page
+never rendered. `AuthProvider`'s initial `refresh()` call hits
+`GET /auth/me` to establish session state, and `MustResetPasswordGuard`
+correctly rejects that route too (Module 2's own design: "can reach
+`POST /auth/set-password` and nothing else") — but the frontend's
+`catch` block collapsed every failure to `user: null`, which
+`useRequireAuth` reads as "not logged in" and redirects to `/login`,
+right back out of the one page this state is supposed to reach. Fixed
+by having `refresh()` recognize the `MUST_RESET_PASSWORD` error code
+specifically and set a separate `mustResetPassword` flag without
+nulling `user`; `useRequireAuth` now redirects to `/set-password`
+instead of `/login` when that flag is set, and the set-password page
+itself treats `mustResetPassword` (not just `user`) as "ready to
+render" so it doesn't redirect to itself. A backend-correctness
+question turned into a frontend state-modeling bug, not a guard change.

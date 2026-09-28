@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CreateTeamDto } from './dto/create-team.dto';
@@ -14,6 +14,12 @@ export class TeamsController {
   @Post('events/:eventId/teams')
   create(@Param('eventId') eventId: string, @CurrentUser() user: User, @Body() dto: CreateTeamDto) {
     return this.teams.createTeam(eventId, user.id, dto.name);
+  }
+
+  // Not in the stage doc — see the comment on TeamsService.getMyTeam.
+  @Get('events/:eventId/teams/mine')
+  mine(@Param('eventId') eventId: string, @CurrentUser() user: User) {
+    return this.teams.getMyTeam(eventId, user.id);
   }
 
   // Not event-scoped by path, per the stage doc's own literal endpoint

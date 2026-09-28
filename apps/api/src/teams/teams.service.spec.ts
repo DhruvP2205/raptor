@@ -105,6 +105,41 @@ describe('TeamsService', () => {
     });
   });
 
+  describe('getMyTeam', () => {
+    it('404s when the caller is not on a team for this event', async () => {
+      const prisma = makePrisma();
+      prisma.teamMembership.findFirst.mockResolvedValue(null);
+      const service = new TeamsService(prisma, makeAudit() as any);
+
+      await expect(service.getMyTeam('event-1', 'u1')).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('returns the team with a flattened member roster (displayName, not the raw User row)', async () => {
+      const prisma = makePrisma();
+      prisma.teamMembership.findFirst.mockResolvedValue({
+        team: {
+          id: 'team-1',
+          name: 'Team Xmass',
+          adminUserId: 'u1',
+          members: [
+            { userId: 'u1', joinedAt: new Date('2026-01-01'), user: { displayName: 'Ada' } },
+            { userId: 'u2', joinedAt: new Date('2026-01-02'), user: { displayName: 'Grace' } },
+          ],
+        },
+      });
+      const service = new TeamsService(prisma, makeAudit() as any);
+
+      const result = await service.getMyTeam('event-1', 'u1');
+
+      expect(result.id).toBe('team-1');
+      expect(result.members).toEqual([
+        { userId: 'u1', displayName: 'Ada', joinedAt: new Date('2026-01-01') },
+        { userId: 'u2', displayName: 'Grace', joinedAt: new Date('2026-01-02') },
+      ]);
+      expect((result.members[0] as any).user).toBeUndefined();
+    });
+  });
+
   describe('joinTeam', () => {
     it('rejects a malformed code without ever querying the database', async () => {
       const prisma = makePrisma();

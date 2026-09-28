@@ -29,6 +29,34 @@ export class TeamsService {
     private readonly audit: AuditService,
   ) {}
 
+  // Not named in the stage doc — added because the frontend has no
+  // other way to re-fetch "am I on a team, and who else is" after the
+  // initial create/join response (create returns only the Team row, no
+  // roster; join returns only the caller's own TeamMembership row, not
+  // the team). Mirrors the same "/mine" convenience shape Module 5 uses
+  // for submissions (D80).
+  async getMyTeam(eventId: string, userId: string) {
+    const membership = await this.prisma.teamMembership.findFirst({
+      where: { userId, team: { eventId } },
+      include: { team: { include: { members: { include: { user: true } } } } },
+    });
+    if (!membership) {
+      throw new NotFoundException({
+        code: 'NO_TEAM',
+        message: 'You are not on a team for this event.',
+      });
+    }
+    const { team } = membership;
+    return {
+      ...team,
+      members: team.members.map((m) => ({
+        userId: m.userId,
+        displayName: m.user.displayName,
+        joinedAt: m.joinedAt,
+      })),
+    };
+  }
+
   async createTeam(eventId: string, userId: string, name: string): Promise<Team> {
     await this.assertRegisteredParticipant(eventId, userId);
     await this.assertNotAlreadyOnATeam(eventId, userId);
