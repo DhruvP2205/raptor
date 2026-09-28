@@ -2,20 +2,24 @@ import { Badge } from '@/components/ui/Badge';
 import { PHASE_LABELS } from '@/lib/format';
 import type { EventPhase, EventStatus } from '@raptor/shared';
 
-type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
+type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'violet' | 'teal' | 'rose';
 
+// Deliberately varied, not a single "everything is blue or gray"
+// palette — each phase family gets its own hue so a grid of event
+// cards actually reads as different states at a glance, not a wall of
+// identical gray dots (D89, docs/DECISIONS.md).
 const PHASE_TONE: Record<EventPhase, Tone> = {
-  NOT_STARTED: 'neutral',
+  NOT_STARTED: 'violet',
   REGISTRATION_OPEN: 'success',
   REGISTRATION_CLOSED: 'neutral',
   IN_PROGRESS: 'accent',
-  SUBMISSIONS_OPEN: 'accent',
-  SUBMISSIONS_CLOSED: 'warning',
+  SUBMISSIONS_OPEN: 'teal',
+  SUBMISSIONS_CLOSED: 'neutral',
   JUDGING: 'warning',
-  RESULTS_ANNOUNCED: 'success',
-  VOTING_OPEN: 'accent',
+  RESULTS_ANNOUNCED: 'rose',
+  VOTING_OPEN: 'teal',
   VOTING_CLOSED: 'neutral',
-  VOTING_WINNER_ANNOUNCED: 'success',
+  VOTING_WINNER_ANNOUNCED: 'rose',
 };
 
 export function PhaseBadge({ phase }: { phase: EventPhase | null }) {

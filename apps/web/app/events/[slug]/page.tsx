@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, Container } from '@/components/ui/Card';
 import { PageSpinner } from '@/components/ui/Spinner';
-import { ApiError, getEvent, registerForEvent } from '@/lib/api';
+import { ApiError, getEvent, registerForEvent, resolveMediaUrl } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { PublicEvent } from '@raptor/shared';
 import Link from 'next/link';
@@ -54,8 +54,17 @@ export default function EventDetailPage() {
   }
   if (!event) return <PageSpinner />;
 
+  const poster = resolveMediaUrl(event.posterUrl);
+
   return (
-    <Container className="grid gap-8 py-10 lg:grid-cols-[1fr_20rem]">
+    <div>
+      {poster && (
+        <div className="h-56 w-full overflow-hidden border-b border-line sm:h-72 lg:h-80">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={poster} alt="" className="h-full w-full object-cover" />
+        </div>
+      )}
+      <Container className="grid gap-8 py-10 lg:grid-cols-[1fr_20rem]">
       <div className="flex flex-col gap-8">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -154,6 +163,7 @@ export default function EventDetailPage() {
           )}
         </Card>
       </aside>
-    </Container>
+      </Container>
+    </div>
   );
 }

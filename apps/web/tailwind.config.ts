@@ -1,14 +1,14 @@
 import type { Config } from 'tailwindcss';
 
-// Monochrome-first system (black/white/gray + one restrained blue
-// accent for links/focus only — never a colored primary button),
-// single sans typeface for everything, hairline borders, small radii.
-// Deliberately modeled on Vercel/Geist's actual visual language, not a
-// generic "SaaS template" palette — see docs/DECISIONS.md D87 for why
-// the first pass (warm cream/amber, serif headlines, badge-pill hero)
-// got scrapped. Token *names* are unchanged from that first pass so
-// every component file that already references them doesn't need
-// touching — only the values moved.
+// Black/white/gray base (chrome, buttons, borders, text) with a wider
+// set of saturated status/accent hues (violet, teal, rose, plus the
+// original blue/success/warning/danger) reserved for things that
+// genuinely vary — event phase, badges, the hero's background treatment
+// — never the UI chrome itself. See docs/DECISIONS.md D87 (why the
+// first, warm-pastel pass got scrapped for being templated) and D89
+// (why pure monochrome then read as flat, and color came back in a
+// targeted way). Token *names* are stable across all three passes so
+// component files don't need touching when only values move.
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {
@@ -33,6 +33,12 @@ const config: Config = {
       'success-soft': '#e6f6f0',
       warning: '#b36b00',
       'warning-soft': '#fef3e2',
+      violet: '#7c3aed',
+      'violet-soft': '#f3ebfe',
+      teal: '#0d9488',
+      'teal-soft': '#e3f7f4',
+      rose: '#e11d6f',
+      'rose-soft': '#fdeaf2',
     },
     fontFamily: {
       display: ['var(--font-display)'],

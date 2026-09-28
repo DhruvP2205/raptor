@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn';
 
-type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
+type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'violet' | 'teal' | 'rose';
 
 const DOT_CLASSES: Record<Tone, string> = {
   neutral: 'bg-ink-faint',
@@ -8,6 +8,9 @@ const DOT_CLASSES: Record<Tone, string> = {
   success: 'bg-success',
   warning: 'bg-warning',
   danger: 'bg-danger',
+  violet: 'bg-violet',
+  teal: 'bg-teal',
+  rose: 'bg-rose',
 };
 
 // A dot + label, normal case, thin border — a status indicator you'd

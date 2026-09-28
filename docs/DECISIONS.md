@@ -994,3 +994,25 @@ implying data that doesn't exist.
 `getEventBySlug` included them) — extending it the same way avoids an
 N+1 fetch-per-card on a homepage that lists many events, and closes the
 inconsistency D84 flagged rather than working around it a second time.
+
+**D89 — Reintroduced a wider color palette (violet/teal/rose alongside
+the existing blue/success/warning/danger) after the pure-monochrome
+pass (D87) read as flat rather than "genuine."**
+Context: user feedback after D87 — the site looked "boring and simple
+black and white." The lesson isn't that D87 was wrong to remove the
+warm-cream/serif/badge-pill pattern (that was a real fix); it's that
+monochrome and "not templated" aren't the same thing — a real product
+can use color deliberately without it reading as generated. Applied
+color in three targeted places, still never as UI chrome (buttons stay
+solid black, borders stay gray): (1) each `EventPhase` now maps to a
+genuinely distinct hue in `PhaseBadge` instead of mostly gray/blue, so
+a grid of event cards reads as different states at a glance; (2) the
+homepage hero has a soft blurred-gradient-blob background (violet/blue
+/teal, low opacity, pure CSS) behind the same monochrome content; (3)
+the feature section and no-poster placeholder cards use color
+purposefully (icon-tinted squares; a deterministic per-event-name hue
+instead of every placeholder being identical flat black). Also added a
+real-data stats strip to the hero (event/live/upcoming counts from the
+same `listEvents()` call already being made) — a SaaS platform's
+homepage reads as confident partly because it's showing real numbers,
+which a generic template never has.
