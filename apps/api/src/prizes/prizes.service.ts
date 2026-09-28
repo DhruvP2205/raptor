@@ -23,6 +23,7 @@ export class PrizesService {
         rank: dto.rank,
         trackId: dto.trackId ?? null,
         decidedBy: dto.decidedBy,
+        prizeUsd: dto.prizeUsd ?? null,
       },
     });
   }
@@ -47,6 +48,7 @@ export class PrizesService {
         ...(dto.rank !== undefined ? { rank: dto.rank } : {}),
         ...(dto.trackId !== undefined ? { trackId: dto.trackId } : {}),
         ...(dto.decidedBy !== undefined ? { decidedBy: dto.decidedBy } : {}),
+        ...(dto.prizeUsd !== undefined ? { prizeUsd: dto.prizeUsd } : {}),
       },
     });
   }

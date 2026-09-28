@@ -27,7 +27,7 @@ describe('PrizesService', () => {
     await service.createPrize('event-1', { name: 'Best Overall', rank: 1, decidedBy: 'JUDGES' });
 
     expect(prisma.prize.create).toHaveBeenCalledWith({
-      data: { eventId: 'event-1', name: 'Best Overall', rank: 1, trackId: null, decidedBy: 'JUDGES' },
+      data: { eventId: 'event-1', name: 'Best Overall', rank: 1, trackId: null, decidedBy: 'JUDGES', prizeUsd: null },
     });
   });
 

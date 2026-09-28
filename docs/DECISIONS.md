@@ -1607,3 +1607,133 @@ Context: decided directly by Claude as the more consistent behavior
 because the underlying submission's draft flag toggled), flagged as an
 explicit test case precisely because it's an easy inconsistency to
 introduce by accident during implementation.
+
+---
+
+## Global Ranking (Module 14)
+
+**D150 — Global Ranking is a new module inspired by a real reference
+implementation (Hackathon Raptors' own `rank.raptors.dev`), whose live
+JSON feed was fetched and inspected directly during design rather than
+designed from the page description alone.**
+Context: the actual JSON schema revealed the reference site does heavy
+cross-event identity reconciliation (`discord_handle`, `github_owner`,
+`name_variants`, a `person_source` provenance field per award) because
+it aggregates results scraped across many independent, disconnected
+past events with no shared account system. This platform doesn't have
+that problem — every award is already tied to a real `User.id` — so
+most of that reconciliation machinery was deliberately *not*
+replicated; only email matching (Section 5 of the stage doc) was
+needed, and only for backfilled historical data via the separate
+Import/Export module.
+
+**D151 — Points sources for v1: podium placement (Module 10), special
+award (`SpecialAwardResultEntry`, D129/D130), and audience-choice
+voting win (Module 11, explicitly added at the user's request, worth
+the same 2 points as a special award).**
+Context: "side quest"/write-up placements and honourable mentions —
+both present in the reference implementation's points table — are
+deliberately deferred, tied to a shelved Write-up module. Confirmed
+directly against the original Dogfood brief that neither concept is
+required there at all.
+
+**D152 — Points table is admin-configurable, platform-wide (one table,
+not per-event), rather than a hardcoded constant.**
+Context: explicit user instruction, matching how the reference
+implementation's table is presented (as a fixed published rule) but
+made editable here since this is a live, operable platform rather than
+a static published report.
+
+**D153 — Global tie-break cascade adopted directly from the reference
+implementation: points → firsts → seconds → thirds → events entered →
+earliest first-event date → shared position.**
+Context: this is a genuinely different cascade from any single event's
+own tie-break rules (D132, D140) — it operates across a person's entire
+history on the platform, not within one event's results. The final
+fallback (a true, complete tie shares the position) reuses the same
+"share rather than invent an arbitrary tiebreaker" philosophy as D132/
+D133/D140, applied at the cross-event level.
+
+**D154 — Historical/pre-platform event backfill is explicitly out of
+scope for this module — it belongs to the separate Import/Export
+module. Global Ranking only needs to display whatever that module
+produces, once linked to a real `User` account.**
+Context: user's explicit instruction ("for historical data fillup we
+have import export module").
+
+**D155 — Email-based identity linking is fully automatic, with zero
+review step, since it carries no self-assertion risk — a verified
+account's own email matching a historical record is not a typed claim
+of someone else's identity.**
+
+**D156 — [SUPERSEDED by D158] Discord-handle identity linking was
+initially designed to require organizer/admin approval before it took
+effect — a request staying pending and linking nothing until reviewed.**
+Context: decided directly by Claude, explicitly modeled on the same
+structural fix already applied for certificate issuance (D143) — an
+unverified, self-typed identity claim must never take effect on its
+own. The user correctly pushed back that admin review doesn't actually
+verify anything either (an admin has no more ability to confirm a
+typed handle belongs to the claimant than the system does) and
+proposed real Discord OAuth instead, which cryptographically proves
+account ownership rather than asking a human to eyeball a claim. This
+intermediate design was superseded before implementation — see D158.
+
+**D157 — [SUPERSEDED by D158] A follow-up design explored real Discord
+OAuth for a "Connect Discord" action, plus a two-tier fallback for
+historical records where a person's Discord username had changed since
+the recorded event (exact-username auto-match, then a corroborated
+self-service claim screen for the rest).**
+Context: this was a real improvement in *correctness* over D156 (OAuth
+actually proves identity; admin review didn't), but running it to its
+conclusion made a different problem visible — Discord matching still
+only reliably works when the username never changed between events,
+which even the reference implementation's own `name_variants` field
+tacitly admits it can't solve automatically. The user then asked
+directly whether Discord linking was worth its cost at all, given
+email matching already exists — see D158.
+
+**D158 — Final decision: drop Discord linking entirely, in any form.
+Identity linking for this module is automatic email matching only
+(D155); any historical record that doesn't match returns a static
+"contact an admin to have it linked" note on the profile, with no
+claim flow, no corroboration logic, and no admin-side tooling built
+yet.**
+Context: user asked directly whether Discord linking was worth
+building at all, given email matching already exists. Reasoning that
+led to dropping it: the only case Discord would rescue — someone
+changed their email but kept the same Discord handle — is a narrow
+slice, and even a correctly-built OAuth version doesn't fully solve
+identity reconciliation on its own (a changed handle defeats it too,
+same as a changed email defeats email matching). Since a general
+"claim an unlinked historical record" fallback would be needed
+regardless of whether Discord linking existed, and that fallback
+covers the same ground Discord would have covered plus more, building
+Discord OAuth for this narrow slice wasn't worth its cost (a new
+external dependency, a new secret to configure, real implementation
+work) when the simpler fallback already subsumes it. The fallback
+itself is also not built yet in this version — deliberately left as
+a plain informational note rather than a real feature, to be designed
+properly once there's a demonstrated need rather than speculatively.
+
+**D159 — The leaderboard is snapshot-based: a background job (reusing
+the existing `worker` container, introduced in Module 6) recomputes a
+`GlobalRankingSnapshot` whenever relevant results publish
+(`PublishedResultVersion`/`VotingResultVersion` going `LIVE`, per D138/
+D141), or on manual admin trigger; every read serves a cached,
+paginated snapshot, never a live cross-event aggregate computed
+per-request.**
+Context: explicit user instruction ("pagination, record per page, and
+caching so it will not load whole thing at once") — reuses Redis
+infrastructure already established for certificates and CAPTCHA/PoW
+(Module 11), no new piece of infra introduced. Certificate rendering
+itself does *not* use the `worker` container (see `ARCHITECTURE.md`
+§4) — this module's snapshot recompute is a different, genuinely
+background-appropriate job, closer in shape to Module 6's verification
+jobs than to certificate rendering.
+
+**D160 — The Write-up module itself remains shelved. Confirmed
+directly against the original Dogfood brief text that it is not
+mentioned anywhere in the brief — this is purely a feature from the
+reference implementation's own historical event catalog, not a
+platform requirement.**

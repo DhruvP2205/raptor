@@ -21,4 +21,11 @@ export class UpdatePrizeDto {
   @IsOptional()
   @IsIn(['JUDGES', 'PUBLIC_VOTE'])
   decidedBy?: 'JUDGES' | 'PUBLIC_VOTE';
+
+  // Explicit null clears a previously-set value; omitted leaves it
+  // unchanged — same convention as trackId above.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  prizeUsd?: number | null;
 }

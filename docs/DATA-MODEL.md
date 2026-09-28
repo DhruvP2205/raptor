@@ -25,15 +25,17 @@ way again, Module 8 added `judgingClosesAt` (D108) and
 `finalScoreDisplayScale`. `Submission` started as a minimal anchor in
 Module 4 — `id`, `teamId`, `everSubmitted`, `createdAt` (D75) — and
 Module 5 extended it additively to the full shape below, per its own
-scope. **Modules 11-12 (Voting, Certificates) are now implemented** —
-`Event.eventClosedAt`/`votingEligibilityMode`/`certificatesEnabled*`,
-`VotingRound`, `ShortlistEntry`, `Vote`, `VoteAbuseFlag`,
-`VotingResultVersion`, `VotingResultEntry`, `Certificate`,
-`CertificateTemplate` all exist in the live schema (§11-12 below).
-**Module 13 (Comments) has a locked stage doc as of this update but is
-not yet implemented** — §13 below describes its target schema only. If
-the live schema and a field documented here disagree **and the owning
-module has already been implemented**, that's a bug.
+scope. **Modules 11-12 and 14 (Voting, Certificates, Global Ranking) are
+now implemented** — `Event.eventClosedAt`/`votingEligibilityMode`/
+`certificatesEnabled*`, `VotingRound`, `ShortlistEntry`, `Vote`,
+`VoteAbuseFlag`, `VotingResultVersion`, `VotingResultEntry`,
+`Certificate`, `CertificateTemplate`, `Prize.prizeUsd`,
+`GlobalPointsConfig`, `GlobalRankingSnapshot`, `GlobalRankingEntry`,
+`GlobalRankingAwardDetail` all exist in the live schema (§11-12/14
+below). **Module 13 (Comments) has a locked stage doc as of this update
+but is not yet implemented** — §13 below describes its target schema
+only. If the live schema and a field documented here disagree **and the
+owning module has already been implemented**, that's a bug.
 
 ---
 
@@ -703,7 +705,75 @@ current gallery visibility (D149).
 
 ---
 
-## 14. Audit
+## 14. Global Ranking (Module 14)
+
+**Implemented.** See `stages/14-global-ranking.md`. Depends on Module
+10 (`RankResultEntry`/`SpecialAwardResultEntry`) and Module 11
+(`VotingResultEntry`).
+
+### `Prize` extension
+
+- `prizeUsd: Int?`, nullable — cross-doc gap, resolved the same way
+  every other additive field in this project has been. Module 3's
+  original `Prize` model never defined a monetary value; this stage
+  doc's own `GlobalRankingAwardDetail.prizeUsd`/`GlobalRankingEntry.
+  prizeUsdTotal` reference one as if it already existed. Best-effort,
+  informational only — never affects points.
+
+### `GlobalPointsConfig`
+
+| Field | Type | Notes |
+|---|---|---|
+| `awardKind` | enum: `PODIUM_FIRST \| PODIUM_SECOND \| PODIUM_THIRD \| SPECIAL_AWARD \| AUDIENCE_CHOICE` | Unique, admin-editable, platform-wide (not per-event) |
+| `points` | int | A missing row falls back to the stage doc's own stated default (Section 3) — resolved in `GlobalRankingService`/the worker's `processor.ts`, not a Prisma-level `@default` |
+| `updatedByUserId`, `updatedAt` | | |
+
+### `GlobalRankingSnapshot` / `GlobalRankingEntry` /
+`GlobalRankingAwardDetail`
+
+Snapshot-based, never computed live per request — recomputed
+automatically whenever a `PublishedResultVersion` (D138) or
+`VotingResultVersion` (D141) goes `LIVE`, plus manual admin recompute.
+Paginated and Redis-cached reads, same infrastructure already used for
+certificate rendering and CAPTCHA/PoW state (Module 11). Recompute runs
+on the `worker` container (introduced Module 6) — a genuinely
+background-appropriate job, unlike certificate rendering which stays
+synchronous in `api` (see `ARCHITECTURE.md` §4).
+
+| Field | Type | Notes |
+|---|---|---|
+| `GlobalRankingSnapshot.id`, `generatedAt`, `isCurrent` | | Exactly one snapshot current at a time; prior ones retained, never deleted |
+| `GlobalRankingEntry.userId`, `points`, `prizeUsdTotal` | | `prizeUsdTotal` shown in full per team member, never split by team size |
+| `GlobalRankingEntry.firstsCount`/`secondsCount`/`thirdsCount`/`eventsCount`/`firstEventDate` | | Feeds the global tie-break cascade (D153) |
+| `GlobalRankingEntry.rank`, `isTied` | int, boolean | Dense ranking (D133-equivalent, applied here across events) |
+| `GlobalRankingAwardDetail.eventId`, `submissionId`, `awardKind`, `pointsAwarded` | | The per-award drill-down record |
+
+Points sources for v1: podium (`RankResultEntry`, ranks 1/2/3 by
+position directly — not gated on a matching `Prize` row existing for
+that rank), special award (`SpecialAwardResultEntry`, D129/D130,
+labeled with the criterion's own label, never a generic fallback),
+audience-choice voting win (`VotingResultEntry.isSharedWin`).
+Write-up/honourable-mention award kinds deliberately deferred (D160) —
+confirmed absent from the Dogfood brief itself. Not split by team size:
+every member of a winning team is credited the full points and full
+`prizeUsd` (Section 7's own note).
+
+**Identity linking, for v1: email match only (Module 1), fully
+automatic (D155).** Every alternative explored during design — Discord
+OAuth linking, a self-service claim-and-corroborate screen, admin
+review tooling — was deliberately walked back (D156→D157→D158) once it
+became clear email matching already covers the primary case; anything
+it misses gets a plain "contact an admin" note, with no linking feature
+built for that path yet. **Currently a no-op in practice**: every point
+source this module reads (`RankResultEntry`/`SpecialAwardResultEntry`/
+`VotingResultEntry`) already resolves to a real `User.id` directly
+through this platform's own data, since the separate Import/Export
+module Section 5 depends on doesn't exist yet (Section 1's own scope
+cut) — there is no historical/imported record to link in this version.
+
+---
+
+## 15. Audit
 
 ### `AuditLog`
 
@@ -715,7 +785,7 @@ corresponding audit entry for context.
 
 ---
 
-## 15. Import / export paths (brief requirement, tracked here as they're
+## 16. Import / export paths (brief requirement, tracked here as they're
 decided)
 
 - Event/Track/Prize descriptions are stored as markdown — directly

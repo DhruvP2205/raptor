@@ -37,6 +37,10 @@ function makeAudit() {
   return { record: jest.fn() };
 }
 
+function makeGlobalRankingQueue() {
+  return { enqueueRecompute: jest.fn() };
+}
+
 const EVENT = { id: 'event-1', resultsAnnounceAt: new Date(Date.now() - 1000) };
 const EVENT_BEFORE_ANNOUNCE = { id: 'event-1', resultsAnnounceAt: new Date(Date.now() + 86_400_000) };
 
@@ -54,7 +58,7 @@ describe('ResultsService', () => {
         { id: 'sub-approved', verification: { finalDecision: 'APPROVED' } },
         { id: 'sub-disqualified', verification: { finalDecision: 'DISQUALIFIED' } },
       ]);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       const result = await service.previewDraft('event-1', 'draft-1');
 
@@ -68,7 +72,7 @@ describe('ResultsService', () => {
       prisma.resultsDraft.findUnique.mockResolvedValue({ id: 'draft-1', eventId: 'event-1', normalizationRunId: 'run-1' });
       prisma.normalizationRun.findUnique.mockResolvedValue({ id: 'run-1', eventId: 'event-1' });
       prisma.rubricCriterion.findMany.mockResolvedValue([{ id: 'crit-1', kind: 'SPECIAL_AWARD' }]);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.previewDraft('event-1', 'draft-1');
 
@@ -87,7 +91,7 @@ describe('ResultsService', () => {
       const prisma = makePrisma();
       prisma.resultsDraft.findUnique.mockResolvedValue({ id: 'draft-1', eventId: 'event-1', normalizationRunId: 'run-1' });
       prisma.normalizationRun.findUnique.mockResolvedValue({ id: 'run-1', eventId: 'OTHER_EVENT' });
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await expect(service.previewDraft('event-1', 'draft-1')).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -99,7 +103,7 @@ describe('ResultsService', () => {
       prisma.event.findUnique.mockResolvedValue(EVENT); // resultsAnnounceAt already passed
       prisma.resultsDraft.findFirst.mockResolvedValue(null); // no AUTO+READY draft either
       prisma.publishedResultVersion.findFirst.mockResolvedValue(null);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       const result = await service.getPublicResults('event-1');
       expect(result).toBeNull();
@@ -108,7 +112,7 @@ describe('ResultsService', () => {
     it('does not auto-publish before resultsAnnounceAt, even with a READY AUTO draft', async () => {
       const prisma = makePrisma();
       prisma.event.findUnique.mockResolvedValue(EVENT_BEFORE_ANNOUNCE);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.getPublicResults('event-1');
 
@@ -121,7 +125,7 @@ describe('ResultsService', () => {
       prisma.event.findUnique.mockResolvedValue(EVENT);
       prisma.publishedResultVersion.findFirst.mockResolvedValueOnce(null); // no live yet, for the "alreadyLive" check
       prisma.resultsDraft.findFirst.mockResolvedValue(null); // the query itself only ever looks for READY, so an IN_PROGRESS one is invisible to it
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.getPublicResults('event-1');
 
@@ -138,7 +142,7 @@ describe('ResultsService', () => {
       // The query itself filters publishMode: 'AUTO' — a MANUAL/READY
       // draft is structurally excluded from ever being returned here.
       prisma.resultsDraft.findFirst.mockResolvedValue(null);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.getPublicResults('event-1');
 
@@ -159,7 +163,7 @@ describe('ResultsService', () => {
       });
       prisma.normalizationRun.findUnique.mockResolvedValue({ id: 'run-1', eventId: 'event-1' });
       const audit = makeAudit();
-      const service = new ResultsService(prisma, audit as any);
+      const service = new ResultsService(prisma, audit as any, makeGlobalRankingQueue() as any);
 
       await service.getPublicResults('event-1');
 
@@ -174,7 +178,7 @@ describe('ResultsService', () => {
       const prisma = makePrisma();
       prisma.event.findUnique.mockResolvedValue(EVENT);
       prisma.publishedResultVersion.findFirst.mockResolvedValueOnce({ id: 'v1', status: 'LIVE' });
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.getPublicResults('event-1');
 
@@ -187,7 +191,7 @@ describe('ResultsService', () => {
     it('rejects unpublishing a version that is not currently LIVE', async () => {
       const prisma = makePrisma();
       prisma.publishedResultVersion.findUnique.mockResolvedValue({ id: 'v1', eventId: 'event-1', status: 'SUPERSEDED' });
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await expect(service.unpublish('event-1', 'v1', 'organizer-1', 'went live by mistake')).rejects.toBeInstanceOf(
         BadRequestException,
@@ -199,7 +203,7 @@ describe('ResultsService', () => {
       prisma.publishedResultVersion.findUnique.mockResolvedValue({ id: 'v1', eventId: 'event-1', status: 'LIVE' });
       prisma.publishedResultVersion.update.mockResolvedValue({ id: 'v1', status: 'UNPUBLISHED' });
       const audit = makeAudit();
-      const service = new ResultsService(prisma, audit as any);
+      const service = new ResultsService(prisma, audit as any, makeGlobalRankingQueue() as any);
 
       await service.unpublish('event-1', 'v1', 'organizer-1', 'went live by mistake');
 
@@ -215,7 +219,7 @@ describe('ResultsService', () => {
     it('rejects correcting a version that is not the current LIVE one', async () => {
       const prisma = makePrisma();
       prisma.publishedResultVersion.findUnique.mockResolvedValue({ id: 'v1', eventId: 'event-1', status: 'SUPERSEDED' });
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await expect(
         service.createCorrection('event-1', 'v1', 'organizer-1', {
@@ -233,7 +237,7 @@ describe('ResultsService', () => {
         { submissionId: 'sub-1', rank: 1, displayScore: 5, isScoreOverridden: false, isDisqualified: false },
         { submissionId: 'sub-2', rank: 2, displayScore: 4, isScoreOverridden: false, isDisqualified: false },
       ]);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.createCorrection('event-1', 'v1', 'organizer-1', {
         type: 'DISQUALIFY',
@@ -263,7 +267,7 @@ describe('ResultsService', () => {
         { submissionId: 'sub-1', rank: 1, displayScore: 5, isScoreOverridden: false, isDisqualified: false },
         { submissionId: 'sub-2', rank: 2, displayScore: 4, isScoreOverridden: false, isDisqualified: false },
       ]);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.createCorrection('event-1', 'v1', 'organizer-1', {
         type: 'REORDER',
@@ -283,7 +287,7 @@ describe('ResultsService', () => {
       prisma.rankResultEntry.findMany.mockResolvedValue([
         { submissionId: 'sub-1', rank: 1, displayScore: 5, isScoreOverridden: false, isDisqualified: false },
       ]);
-      const service = new ResultsService(prisma, makeAudit() as any);
+      const service = new ResultsService(prisma, makeAudit() as any, makeGlobalRankingQueue() as any);
 
       await service.createCorrection('event-1', 'v1', 'organizer-1', {
         type: 'SCORE_OVERRIDE',
@@ -302,7 +306,7 @@ describe('ResultsService', () => {
       prisma.publishedResultVersion.findUnique.mockResolvedValue({ id: 'v1', eventId: 'event-1', status: 'LIVE', versionNumber: 1 });
       prisma.rankResultEntry.findMany.mockResolvedValue([]);
       const audit = makeAudit();
-      const service = new ResultsService(prisma, audit as any);
+      const service = new ResultsService(prisma, audit as any, makeGlobalRankingQueue() as any);
 
       await service.createCorrection('event-1', 'v1', 'organizer-1', {
         type: 'DISQUALIFY',

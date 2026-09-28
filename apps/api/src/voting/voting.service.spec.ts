@@ -193,10 +193,20 @@ describe('VotingService', () => {
   });
 
   describe('castVote — adaptive CAPTCHA + IP abuse flagging (Section 5)', () => {
+    const ORIGINAL_APP_SECRET = process.env.APP_SECRET;
+
     beforeEach(() => {
       jest.useFakeTimers().setSystemTime(NOW_DURING_VOTING);
+      // These tests exercise the IP-based abuse check, which is a
+      // no-op (ipHash stays null) with no APP_SECRET configured — same
+      // precedent as session.service.spec.ts's own ipHash tests.
+      process.env.APP_SECRET = 'test-secret';
     });
-    afterEach(() => jest.useRealTimers());
+    afterEach(() => {
+      jest.useRealTimers();
+      if (ORIGINAL_APP_SECRET === undefined) delete process.env.APP_SECRET;
+      else process.env.APP_SECRET = ORIGINAL_APP_SECRET;
+    });
 
     it('never requires CAPTCHA below the abuse threshold', async () => {
       const prisma = makePrisma();

@@ -122,6 +122,13 @@ model User {
   // organizer/admin who flipped the switch (Section 2.1).
   certificates                 Certificate[]          @relation("CertificateRecipient")
   certificatesEnabledForEvents Event[]                @relation("CertificatesEnabler")
+
+  // Module 14 (Global Ranking) — `globalRankingEntries` is every
+  // per-snapshot leaderboard row this user has ever appeared in, across
+  // every recompute (Section 7); the other two are provenance-only.
+  globalRankingEntries          GlobalRankingEntry[]
+  globalRankingSnapshotsTriggered GlobalRankingSnapshot[] @relation("GlobalRankingSnapshotTrigger")
+  globalPointsConfigsUpdated    GlobalPointsConfig[]    @relation("GlobalPointsConfigUpdater")
 }
 
 model Session {
@@ -303,6 +310,10 @@ model Event {
   // docs/stages/12-certificates.md).
   certificates         Certificate[]
   certificateTemplates CertificateTemplate[]
+
+  // Module 14 — every global-ranking award-detail row ever generated
+  // that credits this event (Section 7, docs/stages/14-global-ranking.md).
+  globalRankingAwardDetails GlobalRankingAwardDetail[]
 }
 
 enum EventStatus {
@@ -357,6 +368,16 @@ model Prize {
   name       String
   rank       Int
   decidedBy  PrizeDecidedBy
+
+  // Module 14's field (Global Ranking) — nullable, no cash value
+  // tracked by default. Module 3's original Prize model never defined
+  // a monetary value; `stages/14-global-ranking.md` §7 references
+  // `GlobalRankingAwardDetail.prizeUsd`/`prizeUsdTotal` as if one
+  // already existed. Cross-doc gap, resolved the same way every other
+  // additive field in this project has been (maxTeamSize, D75-style) —
+  // organizer-optional, defaults to untracked rather than a required
+  // field nobody asked them to fill in for existing events.
+  prizeUsd Int?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -576,6 +597,11 @@ model Submission {
   // this submission (nullable on Certificate; judge certificates have
   // none, docs/stages/12-certificates.md Section 8).
   certificates Certificate[]
+
+  // Module 14 — award-detail rows crediting this submission (podium,
+  // special award, or audience-choice), across every snapshot ever
+  // generated (Section 7, docs/stages/14-global-ranking.md).
+  globalRankingAwardDetails GlobalRankingAwardDetail[]
 
   // NULLs are distinct under Postgres's default unique-index semantics,
   // so this only constrains actual (eventId, soloUserId) pairs — it
@@ -1472,4 +1498,122 @@ model CertificateTemplate {
   certificates Certificate[]
 
   @@unique([eventId, version])
+}
+
+// Module 14 (Global Ranking) — see docs/stages/14-global-ranking.md
+// Section 3/7. One row per award kind, admin-editable, platform-wide
+// (not per-event). A missing row for a given awardKind falls back to
+// the stage doc's own stated default (Section 3) — GlobalRankingService
+// resolves this, not a Prisma-level @default, since the doc frames
+// these as organizer-adjustable policy values, not schema constants.
+model GlobalPointsConfig {
+  id String @id @default(uuid())
+
+  awardKind GlobalAwardKind @unique
+  points    Int
+
+  updatedByUserId String?
+  updatedByUser   User?   @relation("GlobalPointsConfigUpdater", fields: [updatedByUserId], references: [id])
+  updatedAt       DateTime @updatedAt
+}
+
+enum GlobalAwardKind {
+  PODIUM_FIRST
+  PODIUM_SECOND
+  PODIUM_THIRD
+  SPECIAL_AWARD
+  AUDIENCE_CHOICE
+}
+
+// Section 6 — never computed live per request. Exactly one row has
+// isCurrent: true at any time (enforced at the application layer inside
+// a transaction, same "no schema-level constraint for a live singleton"
+// precedent as PublishedResultVersion's own LIVE-per-event invariant);
+// every prior snapshot is retained, never deleted, for audit/history.
+model GlobalRankingSnapshot {
+  id          String   @id @default(uuid())
+  generatedAt DateTime @default(now())
+  isCurrent   Boolean  @default(true)
+
+  // Null for an automatic recompute (a PublishedResultVersion or
+  // VotingResultVersion transitioning to LIVE/away-from-LIVE); set for
+  // a manual admin-triggered recompute (Section 6).
+  triggeredByUserId String?
+  triggeredByUser   User?   @relation("GlobalRankingSnapshotTrigger", fields: [triggeredByUserId], references: [id])
+  triggerReason     String?
+
+  entries GlobalRankingEntry[]
+}
+
+// One row per person per snapshot (Section 7) — never updated in place;
+// a recompute creates an entirely new set under a new snapshot.
+model GlobalRankingEntry {
+  id String @id @default(uuid())
+
+  snapshotId String
+  snapshot   GlobalRankingSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  points        Int
+  // Shown in full per team member, never split by team size (Section
+  // 7's own note) — a podium/audience-choice win credits everyone on
+  // the team the full prize value, not a divided share.
+  prizeUsdTotal Int @default(0)
+
+  eventsCount Int
+  awardsCount Int
+
+  // Feed the global tie-break cascade (Section 4), alongside `points`.
+  firstsCount  Int
+  secondsCount Int
+  thirdsCount  Int
+
+  // Earliest event (by Event.eventStartsAt) among this person's award
+  // -crediting events — the cascade's second-to-last tiebreaker.
+  firstEventId   String?
+  firstEventDate DateTime?
+
+  // Dense ranking; isTied marks a position shared with at least one
+  // other entry after the full six-level cascade (Section 4, step 7).
+  rank    Int
+  isTied  Boolean @default(false)
+
+  awardDetails GlobalRankingAwardDetail[]
+
+  @@unique([snapshotId, userId])
+}
+
+// The drill-down — one row per award per snapshot entry (Section 7).
+// Every field here is a denormalized snapshot, not a live reference —
+// same "freeze the facts, never a live pointer" precedent as
+// NormalizedJudgeScore (Module 9) and Certificate.payloadJson (Module
+// 12); a submission's title changing later, or a Prize's USD value
+// being edited later, must never silently alter a past snapshot's
+// numbers.
+model GlobalRankingAwardDetail {
+  id String @id @default(uuid())
+
+  globalRankingEntryId String
+  globalRankingEntry   GlobalRankingEntry @relation(fields: [globalRankingEntryId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Null only in the eligibility gap this platform's own data can't hit
+  // in practice (every award kind here is always tied to a specific
+  // submission) — kept nullable defensively rather than assumed.
+  submissionId String?
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  awardKind GlobalAwardKind
+
+  label       String
+  teamName    String?
+  projectName String?
+
+  finalScore    Float?
+  prizeUsd      Int?
+  pointsAwarded Int
 }

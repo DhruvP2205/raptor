@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { GlobalRankingQueueService } from '../queues/global-ranking-queue.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateVotingCorrectionDto } from './dto/create-voting-correction.dto';
 import { VotingService } from './voting.service';
@@ -19,6 +20,7 @@ export class VotingResultsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly voting: VotingService,
+    private readonly globalRankingQueue: GlobalRankingQueueService,
   ) {}
 
   async publish(eventId: string, userId: string, votingRoundId?: string) {
@@ -41,6 +43,10 @@ export class VotingResultsService {
       versionId: version.id,
       versionNumber: version.versionNumber,
     });
+
+    // Module 14 — a LIVE VotingResultVersion is the other recompute
+    // trigger (Section 6, docs/stages/14-global-ranking.md).
+    await this.globalRankingQueue.enqueueRecompute();
 
     return this.getVersionDetail(eventId, version.id);
   }
@@ -88,6 +94,7 @@ export class VotingResultsService {
       data: { status: 'UNPUBLISHED', unpublishReason: reason },
     });
     await this.audit.record(userId, 'VOTING_RESULTS_UNPUBLISHED', { eventId, versionId, reason });
+    await this.globalRankingQueue.enqueueRecompute();
     return updated;
   }
 
@@ -138,6 +145,8 @@ export class VotingResultsService {
       submissionId: dto.submissionId,
       reason: dto.reason,
     });
+
+    await this.globalRankingQueue.enqueueRecompute();
 
     return this.getVersionDetail(eventId, version.id);
   }

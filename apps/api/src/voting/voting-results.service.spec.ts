@@ -22,6 +22,10 @@ function makeAudit() {
   return { record: jest.fn() };
 }
 
+function makeGlobalRankingQueue() {
+  return { enqueueRecompute: jest.fn() };
+}
+
 function makeVoting(overrides: Partial<Record<string, jest.Mock>> = {}) {
   return {
     getEventOrThrow: jest.fn().mockResolvedValue({ id: 'event-1' }),
@@ -45,7 +49,7 @@ describe('VotingResultsService', () => {
         entries: [],
       });
       const voting = makeVoting();
-      const service = new VotingResultsService(prisma, makeAudit() as any, voting);
+      const service = new VotingResultsService(prisma, makeAudit() as any, voting, makeGlobalRankingQueue() as any);
 
       const result = await service.publish('event-1', 'organizer-1');
 
@@ -62,7 +66,7 @@ describe('VotingResultsService', () => {
     it('returns null when no LIVE version exists', async () => {
       const prisma = makePrisma();
       prisma.votingResultVersion.findFirst.mockResolvedValue(null);
-      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting());
+      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting(), makeGlobalRankingQueue() as any);
 
       expect(await service.getPublicResults('event-1')).toBeNull();
     });
@@ -70,7 +74,7 @@ describe('VotingResultsService', () => {
     it('excludes disqualified entries and never selects userId anywhere in the query', async () => {
       const prisma = makePrisma();
       prisma.votingResultVersion.findFirst.mockResolvedValue({ id: 'v1', status: 'LIVE', entries: [] });
-      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting());
+      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting(), makeGlobalRankingQueue() as any);
 
       await service.getPublicResults('event-1');
 
@@ -84,7 +88,7 @@ describe('VotingResultsService', () => {
     it('rejects unpublishing a version that is not currently LIVE', async () => {
       const prisma = makePrisma();
       prisma.votingResultVersion.findUnique.mockResolvedValue({ id: 'v1', eventId: 'event-1', status: 'SUPERSEDED' });
-      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting());
+      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting(), makeGlobalRankingQueue() as any);
 
       await expect(service.unpublish('event-1', 'v1', 'organizer-1', 'mistake')).rejects.toBeInstanceOf(BadRequestException);
     });
@@ -92,7 +96,7 @@ describe('VotingResultsService', () => {
     it('404s for a version belonging to a different event', async () => {
       const prisma = makePrisma();
       prisma.votingResultVersion.findUnique.mockResolvedValue({ id: 'v1', eventId: 'OTHER_EVENT', status: 'LIVE' });
-      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting());
+      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting(), makeGlobalRankingQueue() as any);
 
       await expect(service.unpublish('event-1', 'v1', 'organizer-1', 'mistake')).rejects.toBeInstanceOf(NotFoundException);
     });
@@ -106,7 +110,7 @@ describe('VotingResultsService', () => {
         { submissionId: 's1', voteCount: 5, votePercentage: 100, isSharedWin: true, isDisqualified: false },
       ]);
       prisma.votingResultVersion.findUnique.mockResolvedValueOnce({ id: 'v2', eventId: 'event-1', entries: [] });
-      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting());
+      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting(), makeGlobalRankingQueue() as any);
 
       await service.createCorrection('event-1', 'v1', 'organizer-1', {
         type: 'DISQUALIFY',
@@ -127,7 +131,7 @@ describe('VotingResultsService', () => {
         { submissionId: 's1', voteCount: 5, votePercentage: 60, isSharedWin: false, isDisqualified: false },
         { submissionId: 's2', voteCount: 3, votePercentage: 40, isSharedWin: false, isDisqualified: false },
       ]);
-      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting());
+      const service = new VotingResultsService(prisma, makeAudit() as any, makeVoting(), makeGlobalRankingQueue() as any);
 
       await expect(
         service.createCorrection('event-1', 'v1', 'organizer-1', {

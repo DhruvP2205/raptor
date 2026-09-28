@@ -105,30 +105,19 @@ to `eventStartsAt`, not `registrationOpensAt` or `votingOpensAt` — a
 deliberate choice to block accounts created purely to farm a specific
 vote after the event's real timeline is already underway.
 
-**Bonus guardrail**
-A validation warning (not a hard block) shown to an organizer at event
-creation/edit if the sum of all `BONUS.maxPoints` for the event exceeds
-a threshold (default 20). Exists because the scoring formula's safety —
-bonus can only ever affect close calls, never overturn a real quality
-gap — depends on bonus values staying small relative to the 100-point
-general base; nothing in the math itself prevents an organizer from
-setting an oversized bonus track that reintroduces that exact risk.
-Proceeding past the warning is logged to `AuditLog`, not silently
-allowed.
-
 **Judge calibration profile**
 A judge's platform-wide, live-updating personal scoring tendency
 (`judgeCalibrationMean`, `judgeCalibrationStdDev`,
 `judgeCalibrationSampleCount` on `User`) — computed across every
 `COMPLETED` review that judge has *ever* done, across **all events**,
-not reset per event. This is deliberately different from the
+not reset per event (D122). This is deliberately different from the
 per-event-scoped design most other judge-related data in this platform
 uses (e.g. `EventMembership`) — calibration is treated as a stable
 personal trait that follows the judge across the whole platform.
 
 **Minimum-N (normalization)**
-The threshold (3, counted platform-wide, not per-event) below which a
-judge's own `judgeCalibrationMean`/`StdDev` are considered
+The threshold (3, counted platform-wide, not per-event — D123) below
+which a judge's own `judgeCalibrationMean`/`StdDev` are considered
 statistically unreliable. Below this threshold, that judge is
 normalized against the current event's own aggregate baseline instead
 of their own figures — see **event-baseline fallback** below. Distinct
@@ -139,37 +128,37 @@ whether a judge's *personal* statistics are trustworthy enough to use.
 **Event-baseline fallback**
 When a judge is below minimum-N, their z-score is computed against that
 specific event's own mean/stddev (across every judge's `rawTotal` in
-that event) rather than their own unreliable personal mean/stddev. This
-keeps every judge's contribution in the same z-score space regardless of
-how much platform history they individually have, so averaging across a
-mix of experienced and brand-new judges on the same submission stays
-mathematically valid.
+that event) rather than their own unreliable personal mean/stddev
+(D124). This keeps every judge's contribution in the same z-score space
+regardless of how much platform history they individually have, so
+averaging across a mix of experienced and brand-new judges on the same
+submission stays mathematically valid.
 
 **Uniform scoring (flag)**
 A judge whose `judgeCalibrationStdDev` is exactly 0 — they've given
 every project across their history the identical `rawTotal`, meaning
 they carry no differentiating signal. Their z-score is set to 0
 (neutral) rather than excluded, and the situation is explicitly flagged
-for admin/organizer visibility — never silently absorbed into the
-calculation with no trace.
+for admin/organizer visibility (D125) — never silently absorbed into
+the calculation with no trace.
 
 **Normalization run vs. live judge profile — snapshot, not a pointer**
 A `NormalizationRun`'s `NormalizedJudgeScore` rows freeze each judge's
 mean/stddev/sample-count exactly as they stood at the moment that run
-executed. This is a permanent copy, **never a live reference** back to
-`User.judgeCalibration*` — because that live profile keeps changing as
-the judge reviews more projects at *future* events, and a past,
-already-locked event's normalization must never appear to silently
-change just because time passed and the judge judged something else
-later.
+executed (D127). This is a permanent copy, **never a live reference**
+back to `User.judgeCalibration*` — because that live profile keeps
+changing as the judge reviews more projects at *future* events, and a
+past, already-locked event's normalization must never appear to
+silently change just because time passed and the judge judged
+something else later.
 
 **Normalization lock (`resultsAnnounceAt`)**
 Normalization can be triggered and re-triggered freely while
 `judgingClosesAt <= now() < resultsAnnounceAt`, but is **permanently
 and unconditionally locked** the instant `resultsAnnounceAt` passes —
-no admin override, no exception. Same category of protection as an
-already-cast vote or an issued certificate: once results are real and
-public, the computation behind them can't be silently redone. **Not
+no admin override, no exception (D126). Same category of protection as
+an already-cast vote or an issued certificate: once results are real
+and public, the computation behind them can't be silently redone. **Not
 the same thing as whether results can be corrected after publish** —
 see Post-publish correction below, which is a separate layer that
 exists precisely because this lock, correctly, allows no exceptions of
@@ -178,28 +167,28 @@ its own.
 **Special-award criterion / nomination**
 A third `RubricCriterion` kind (`SPECIAL_AWARD`), alongside `SCORING`
 and `BONUS` — added retroactively to Module 8 after a gap was caught
-during Results & Rankings design. A judge, while reviewing one
+during Results & Rankings design (D129). A judge, while reviewing one
 submission, can flag (`Score.value = 1`) whether it deserves a given
 special award (Best Code, Most Unique Feature, etc.). Never part of the
 `generalRaw`/`bonusRaw`/`rawTotal` scoring formula — tallied entirely
-separately at results time. The winner is whichever submission
+separately at results time (D130). The winner is whichever submission
 accumulates the most nomination flags across every judge who reviewed
 it. **Tie-break, deliberately different order from the rank-prize
 cascade: nomination count → `bonusRaw` → `NormalizedScore.finalScore`
-→ share.** Limitation, stated plainly: a judge can only nominate from
-submissions they personally reviewed, not the full event-wide pool.
+→ share (D140).** Limitation, stated plainly: a judge can only nominate
+from submissions they personally reviewed, not the full event-wide pool.
 
 **Dense ranking**
-The ranking style this platform uses for rank-based prizes: after a
-tied position, the next distinct score takes the **next sequential**
-rank number, never a skipped one. Two submissions tied for 2nd means
-the next submission is ranked 3rd, not 4th. Explicitly not "Olympic"
-/skip-ranking, which would have made that next submission 4th.
+The ranking style this platform uses for rank-based prizes (D133):
+after a tied position, the next distinct score takes the **next
+sequential** rank number, never a skipped one. Two submissions tied for
+2nd means the next submission is ranked 3rd, not 4th. Explicitly not
+"Olympic"/skip-ranking, which would have made that next submission 4th.
 
 **Rank tie-break cascade → share, never escalate**
 `NormalizedScore.finalScore` → pre-normalization `averageRawTotal` →
 `bonusRaw` → if still tied, **share the position and its prize
-together.** Unlike some other tie-handling in this platform, this
+together** (D132). Unlike some other tie-handling in this platform, this
 resolution is fully automatic end-to-end — there's no manual-review
 escalation step for a rank tie the way there might be for, say, a
 disputed vote count. **Not the same cascade order as special-award
@@ -215,10 +204,10 @@ never deleted or mutated. Only one version is ever `LIVE`
 **Post-publish correction**
 A deliberate, heavily-audited action an organizer/admin can take
 *after* results are already live — disqualify a submission, manually
-reorder rank, or explicitly override a displayed score. Always requires
-a written reason, always produces a new `PublishedResultVersion` rather
-than editing the live one, always visibly marked as a correction (never
-indistinguishable from an original result). **Does not reopen
+reorder rank, or explicitly override a displayed score (D139). Always
+requires a written reason, always produces a new `PublishedResultVersion`
+rather than editing the live one, always visibly marked as a correction
+(never indistinguishable from an original result). **Does not reopen
 normalization** — see Normalization lock above; this is a separate
 override sitting on top of an already-frozen computation, not a way
 around the lock.
@@ -227,9 +216,9 @@ around the lock.
 Two independent things, easy to conflate: `EventPhase` reaching
 `RESULTS_ANNOUNCED` is purely timestamp-computed (Module 3) and happens
 regardless of organizer action. What participants actually *see* is
-gated by whether a `PublishedResultVersion` exists at `status: LIVE` —
-a phase transition alone reveals nothing. **The same pattern applies to
-voting**, with `VotingResultVersion` and `EventPhase:
+gated by whether a `PublishedResultVersion` exists at `status: LIVE`
+(D138) — a phase transition alone reveals nothing. **The same pattern
+applies to voting**, with `VotingResultVersion` and `EventPhase:
 VOTING_WINNER_ANNOUNCED` — see the Voting round vs. shortlist entry
 below for how the two publish gates (judge results and voting results)
 relate to each other.
@@ -237,7 +226,7 @@ relate to each other.
 **Voting round vs. shortlist — reveal timing**
 The shortlist (which submissions are eligible to appear on a voting
 ballot) becomes publicly visible **the moment judge-decided results are
-published** (`PublishedResultVersion.status: LIVE`, Module 10) — not at
+published** (`PublishedResultVersion.status: LIVE`, D141) — not at
 `votingOpensAt`. Voting itself (actually casting a vote) is gated
 separately by `votingOpensAt`/`votingClosesAt`. This means there's
 normally a real gap where the shortlist is public knowledge but voting
@@ -271,18 +260,18 @@ under a fake name. See `12-certificates.md` Section 2 and
 **Certificate role vs. multiple certificates per event**
 `Certificate.role` (`PARTICIPANT | JUDGE | WINNER |
 SPECIAL_AWARD_WINNER`) is fixed per row — a person who both participated
-and won holds **two separate `Certificate` rows** for the same event,
-not one row whose content changes depending on outcome. Don't design
-code that assumes exactly one certificate per person per event.
+and won holds **two separate `Certificate` rows** for the same event
+(D146), not one row whose content changes depending on outcome. Don't
+design code that assumes exactly one certificate per person per event.
 
 **Self-deletion vs. moderation deletion**
 A recurring pattern for any user-generated content that can be removed
 by more than one kind of actor: **the content's own author** can
 delete it freely, no justification needed. **Anyone else** (organizer,
 admin) removing the same content is a moderation action, and
-**requires a mandatory written reason**, logged to `AuditLog` — same
-distinction as, e.g., a participant leaving their own team (no reason
-needed) versus an organizer disqualifying a submission (reason
+**requires a mandatory written reason**, logged to `AuditLog` (D148) —
+same distinction as, e.g., a participant leaving their own team (no
+reason needed) versus an organizer disqualifying a submission (reason
 required). First formalized for comments (Module 13), but the
 distinction generalizes to any future user-content-removal feature.
 
@@ -426,3 +415,16 @@ general base; nothing in the math itself prevents an organizer from
 setting an oversized bonus track that reintroduces that exact risk.
 Proceeding past the warning is logged to `AuditLog`, not silently
 allowed.
+
+**Identity linking, v1 (Global Ranking, Module 14) — email only,
+deliberately not Discord**
+Historical/imported records link to a real `User` account
+automatically when their email matches (D155) — safe, since it's a
+verified account matching itself, not a typed claim. Every richer
+alternative (an admin-review queue for a typed Discord handle, real
+Discord OAuth, a self-service claim screen with corroboration) was
+designed in real detail and then deliberately dropped (D156→D157→D158)
+once it became clear email matching already covers the common case
+and every alternative added real cost for a narrow remaining slice.
+Anything email doesn't catch gets a static "contact an admin" note,
+with no linking feature built for that path yet.

@@ -36,7 +36,7 @@ implies.
 | API docs | `@nestjs/swagger` | Generates OpenAPI directly from the same decorators used for request validation — one source of truth, feeds the API-First bonus |
 | SVG→PDF (certificates) | Pure-JS conversion (e.g. `svg-to-pdfkit`) | No headless-browser dependency — keeps the image light and laptop-friendly |
 | CAPTCHA / abuse resistance | Self-built (visible fallback + invisible proof-of-work) | Live as of Module 11 (`PowCaptchaService`) — no third-party service call, satisfies the no-hosted-dependency rule |
-| Background jobs | BullMQ on Redis, separate `worker` container | Introduced in Module 6 — GitHub API calls during submission verification cannot run synchronously in the API's request thread without degrading responsiveness for other users. Certificate rendering (Module 12) does not use this — see §4 |
+| Background jobs | BullMQ on Redis, separate `worker` container | Introduced in Module 6 — GitHub API calls during submission verification cannot run synchronously in the API's request thread without degrading responsiveness for other users. Module 14's global-ranking recompute reuses this same container as a second, independent queue. Certificate rendering (Module 12) does not use this — see §4 |
 | Secret storage requiring reversible decryption (GitHub tokens) | AES-256-GCM, key via Docker secrets | The one deliberate exception to the platform's hash-everything pattern — a GitHub PAT must be read back in plaintext to call the API, unlike session/verification/invitation tokens which are compare-only |
 
 ---
@@ -117,13 +117,19 @@ Five containers, on two deliberately separated Docker networks:
 background jobs that must never run synchronously in the API's request
 thread — introduced in Module 6 (Submission Verification) for GitHub
 API calls, the one job type in this platform genuinely too slow/
-network-dependent to run inline. Certificate rendering (Module 12) does
-**not** use it: SVG→PDF via pure-JS `svg-to-pdfkit` is fast enough to
-run directly in the API's request thread (the stage doc's own "generated
-on demand... at request time" framing, backed by Redis caching), so an
-earlier assumption that it would reuse this container was corrected
-once the module was actually implemented — see CLAUDE.md on code/doc
-disagreements.
+network-dependent to run inline. Module 14 (Global Ranking) added a
+second, independent BullMQ queue in this same container — a
+cross-event aggregate recompute, triggered whenever a
+`PublishedResultVersion`/`VotingResultVersion` goes `LIVE` (or a manual
+admin recompute) — genuinely background-appropriate for the same
+reason GitHub verification is, just a different kind of slow (scanning
+every LIVE result across every event, not a network call). Certificate
+rendering (Module 12) does **not** use it: SVG→PDF via pure-JS
+`svg-to-pdfkit` is fast enough to run directly in the API's request
+thread (the stage doc's own "generated on demand... at request time"
+framing, backed by Redis caching), so an earlier assumption that it
+would reuse this container was corrected once the module was actually
+implemented — see CLAUDE.md on code/doc disagreements.
 
 **No mail-catcher container.** Considered and explicitly rejected (see
 `DECISIONS.md`) — SMTP is provider-agnostic and configured via Docker
@@ -247,11 +253,16 @@ vs. where the clock currently sits) before being modeled as one enum.
 ## 8. Deferred/not-yet-designed subsystems
 
 Documented here so it's clear what's intentionally not architected yet,
-rather than accidentally forgotten. Modules 1-12 (Auth & Email through
-Certificates) are implemented as of this update; Module 13 (Comments)
-has a locked stage doc too but isn't implemented yet — it belongs in
-the module list, not this one. What's actually listed here still has
-**no stage doc at all**:
+rather than accidentally forgotten. Modules 1-12 and 14 (Auth & Email
+through Certificates, plus Global Ranking) are implemented as of this
+update; Module 13 (Comments) has a locked stage doc but isn't
+implemented yet — it belongs in the module list, not this one. Global
+Ranking introduced no new infrastructure, as anticipated: its snapshot
+recompute job runs on the existing `worker` container (Module 6, a new
+BullMQ queue alongside Module 6's own verification queue), and its
+cache reads reuse the existing Redis instance — same pattern as
+CAPTCHA/PoW state. What's actually listed here still has **no stage
+doc at all**:
 
 - The shareable, not-yet-bound judge invitation link (Section 3.2 of
   Module 2's stage doc, bullet 2) — direct-add by known email is
@@ -259,8 +270,9 @@ the module list, not this one. What's actually listed here still has
   (D64). Revisit before claiming Module 2 fully done.
 - Bulk certificate download/export (D40) — deliberately optional/
   dropped scope, not something the locked Module 12 stage doc requires.
-- REST API/webhooks, bulk import/export, pairwise judging mode,
-  normalization proof, threat model doc, OpenAPI publication
+- REST API/webhooks, bulk import/export (which Global Ranking's
+  historical-backfill path now depends on, per D154), pairwise judging
+  mode, normalization proof, threat model doc, OpenAPI publication
 
 Each will get its own `stages/NN-name.md` following the same format as
 every module locked so far before any code is written against it.

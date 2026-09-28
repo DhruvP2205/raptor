@@ -8,6 +8,7 @@ import { CertificatesModule } from './certificates/certificates.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
 import { GithubTokensModule } from './github-tokens/github-tokens.module';
+import { GlobalRankingModule } from './global-ranking/global-ranking.module';
 import { MailModule } from './mail/mail.module';
 import { MarkdownModule } from './markdown/markdown.module';
 import { MembershipModule } from './membership/membership.module';
@@ -53,6 +54,7 @@ import { VotingModule } from './voting/voting.module';
     ResultsModule,
     VotingModule,
     CertificatesModule,
+    GlobalRankingModule,
   ],
   controllers: [AppController],
 })

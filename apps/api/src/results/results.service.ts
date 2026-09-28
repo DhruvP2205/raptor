@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
+import { GlobalRankingQueueService } from '../queues/global-ranking-queue.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { computeJudgeRawTotal } from '../scoring/score-formula';
 import type { CreateCorrectionDto } from './dto/create-correction.dto';
@@ -23,6 +24,7 @@ export class ResultsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly globalRankingQueue: GlobalRankingQueueService,
   ) {}
 
   // --- Drafts (Section 5.1) ---
@@ -108,6 +110,12 @@ export class ResultsService {
       versionNumber: version.versionNumber,
       draftId: draft.id,
     });
+
+    // Module 14 — a LIVE PublishedResultVersion is one of this
+    // platform's two recompute triggers (Section 6,
+    // docs/stages/14-global-ranking.md). Fails open; never blocks a
+    // publish.
+    await this.globalRankingQueue.enqueueRecompute();
 
     return this.getVersionDetail(eventId, version.id);
   }
@@ -199,6 +207,8 @@ export class ResultsService {
       versionNumber: version.versionNumber,
       draftId: draft.id,
     });
+
+    await this.globalRankingQueue.enqueueRecompute();
   }
 
   // --- Post-publish corrections & unpublish (Section 5.4/7) ---
@@ -218,6 +228,10 @@ export class ResultsService {
     });
 
     await this.audit.record(userId, 'RESULTS_UNPUBLISHED', { eventId, versionId, reason });
+
+    // Points from this event's podium/special-award entries must stop
+    // counting the moment they're no longer LIVE (Section 6).
+    await this.globalRankingQueue.enqueueRecompute();
 
     return updated;
   }
@@ -288,6 +302,8 @@ export class ResultsService {
       submissionId: dto.submissionId,
       reason: dto.reason,
     });
+
+    await this.globalRankingQueue.enqueueRecompute();
 
     return this.getVersionDetail(eventId, version.id);
   }
