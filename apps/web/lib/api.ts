@@ -18,6 +18,12 @@ import type {
   JudgeCalibrationProfile,
   NormalizationRunDetail,
   NormalizationRunSummary,
+  PublishMode,
+  PublishedResultVersion,
+  PublishedResultVersionSummary,
+  ResultCorrectionType,
+  ResultsDraft,
+  ResultsPreview,
   RubricCriterion,
   RubricCriterionKind,
   ScoringData,
@@ -510,4 +516,65 @@ export function getNormalizationRunDetail(eventId: string, runId: string) {
 
 export function getJudgeCalibrationProfile(userId: string) {
   return apiFetch<JudgeCalibrationProfile>(`/admin/judges/${userId}/calibration`);
+}
+
+// --- Results & Rankings (Module 10) ---
+
+export function createResultsDraft(eventId: string, input: { normalizationRunId?: string; publishMode?: PublishMode }) {
+  return apiFetch<ResultsDraft>(`/events/${eventId}/results/drafts`, { method: 'POST', body: input });
+}
+
+export function listResultsDrafts(eventId: string) {
+  return apiFetch<ResultsDraft[]>(`/events/${eventId}/results/drafts`);
+}
+
+export function updateResultsDraft(
+  eventId: string,
+  draftId: string,
+  input: { draftStatus?: ResultsDraft['draftStatus']; publishMode?: PublishMode },
+) {
+  return apiFetch<ResultsDraft>(`/events/${eventId}/results/drafts/${draftId}`, { method: 'PATCH', body: input });
+}
+
+export function previewResultsDraft(eventId: string, draftId: string) {
+  return apiFetch<ResultsPreview>(`/events/${eventId}/results/drafts/${draftId}/preview`);
+}
+
+export function publishResultsDraft(eventId: string, draftId: string) {
+  return apiFetch<PublishedResultVersion>(`/events/${eventId}/results/drafts/${draftId}/publish`, {
+    method: 'POST',
+    body: { confirm: true },
+  });
+}
+
+export function listResultVersions(eventId: string) {
+  return apiFetch<PublishedResultVersionSummary[]>(`/events/${eventId}/results/versions`);
+}
+
+export function getResultVersionDetail(eventId: string, versionId: string) {
+  return apiFetch<PublishedResultVersion>(`/events/${eventId}/results/versions/${versionId}`);
+}
+
+export function unpublishResultVersion(eventId: string, versionId: string, reason: string) {
+  return apiFetch<PublishedResultVersionSummary>(`/events/${eventId}/results/versions/${versionId}/unpublish`, {
+    method: 'POST',
+    body: { reason },
+  });
+}
+
+export function createResultCorrection(
+  eventId: string,
+  versionId: string,
+  input: { type: ResultCorrectionType; submissionId: string; reason: string; newRank?: number; displayScore?: number },
+) {
+  return apiFetch<PublishedResultVersion>(`/events/${eventId}/results/versions/${versionId}/corrections`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+// Public — no organizer access required, mirrors the backend's
+// deliberately separate PublicResultsController.
+export function getPublicResults(eventId: string) {
+  return apiFetch<PublishedResultVersion | null>(`/events/${eventId}/results`);
 }

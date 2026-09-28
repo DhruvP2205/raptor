@@ -411,6 +411,81 @@ export interface JudgeCalibrationProfile {
   judgeCalibrationSampleCount: number;
 }
 
+// Module 10 (Results & Rankings) — see stages/10-results-and-rankings.md.
+export type DraftStatus = 'IN_PROGRESS' | 'READY';
+export type PublishMode = 'AUTO' | 'MANUAL';
+export type PublishedResultVersionStatus = 'LIVE' | 'SUPERSEDED' | 'UNPUBLISHED';
+export type ResultCorrectionType = 'DISQUALIFY' | 'REORDER' | 'SCORE_OVERRIDE';
+
+export interface ResultsDraft {
+  id: string;
+  eventId: string;
+  normalizationRunId: string;
+  draftStatus: DraftStatus;
+  publishMode: PublishMode;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+// `id`/`publishedResultVersionId` are absent on a not-yet-persisted
+// draft preview row, present once it's a real PublishedResultVersion
+// entry — one shape covers both so the frontend can render preview and
+// published tables with the same component.
+export interface RankResultRow {
+  id?: string;
+  publishedResultVersionId?: string;
+  submissionId: string;
+  rank: number;
+  displayScore: number;
+  isScoreOverridden: boolean;
+  isDisqualified: boolean;
+  submission: { id: string; title: string | null } | null;
+}
+
+export interface SpecialAwardResultRow {
+  id?: string;
+  publishedResultVersionId?: string;
+  criterionId: string;
+  submissionId: string;
+  nominationCount: number;
+  isShared: boolean;
+  submission: { id: string; title: string | null } | null;
+  criterion: { id: string; label: string } | null;
+}
+
+export interface ResultsPreview {
+  rankEntries: RankResultRow[];
+  specialAwardEntries: SpecialAwardResultRow[];
+}
+
+export interface PublishedResultVersion extends ResultsPreview {
+  id: string;
+  eventId: string;
+  versionNumber: number;
+  status: PublishedResultVersionStatus;
+  resultsDraftId: string | null;
+  publishedByUserId: string;
+  publishedAt: string;
+  correctionReason: string | null;
+  unpublishReason: string | null;
+  // Derived, not persisted — see results.service.ts's
+  // deriveCorrectedSubmissionId. Null on an original (non-correction)
+  // version.
+  correctedSubmissionId: string | null;
+}
+
+export interface PublishedResultVersionSummary {
+  id: string;
+  eventId: string;
+  versionNumber: number;
+  status: PublishedResultVersionStatus;
+  resultsDraftId: string | null;
+  publishedByUserId: string;
+  publishedAt: string;
+  correctionReason: string | null;
+  unpublishReason: string | null;
+}
+
 export interface ApiErrorBody {
   code?: string;
   message: string | string[];

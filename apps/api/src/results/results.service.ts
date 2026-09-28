@@ -87,7 +87,39 @@ export class ResultsService {
   // fresh, never persisted. Same computation publishDraft uses.
   async previewDraft(eventId: string, draftId: string) {
     const draft = await this.getDraftOrThrow(eventId, draftId);
-    return this.computeResults(eventId, draft.normalizationRunId);
+    const computed = await this.computeResults(eventId, draft.normalizationRunId);
+    return this.toPreviewShape(computed);
+  }
+
+  // computeResults (used to persist a version) only returns bare IDs —
+  // persistNewVersion has no need for a title. The design doc's draft
+  // preview needs "the same rank-list visual as the public page"
+  // though, which requires a submission title and (for special awards)
+  // a criterion label. Rather than inventing a second, drifting join on
+  // the frontend, this mirrors getVersionDetail's own include shape so
+  // one table component can render both a preview and a real version.
+  private async toPreviewShape(computed: ComputedResults) {
+    const submissionIds = [
+      ...new Set([
+        ...computed.rankRows.map((r) => r.submissionId),
+        ...computed.specialAwardRows.map((r) => r.submissionId),
+      ]),
+    ];
+    const criterionIds = [...new Set(computed.specialAwardRows.map((r) => r.criterionId))];
+    const [submissions, criteria] = await Promise.all([
+      this.prisma.submission.findMany({ where: { id: { in: submissionIds } }, select: { id: true, title: true } }),
+      this.prisma.rubricCriterion.findMany({ where: { id: { in: criterionIds } }, select: { id: true, label: true } }),
+    ]);
+    const submissionById = new Map(submissions.map((s) => [s.id, s]));
+    const criterionById = new Map(criteria.map((c) => [c.id, c]));
+    return {
+      rankEntries: computed.rankRows.map((r) => ({ ...r, submission: submissionById.get(r.submissionId) ?? null })),
+      specialAwardEntries: computed.specialAwardRows.map((r) => ({
+        ...r,
+        submission: submissionById.get(r.submissionId) ?? null,
+        criterion: criterionById.get(r.criterionId) ?? null,
+      })),
+    };
   }
 
   // --- Publishing (Section 5.2/5.3) ---
@@ -139,7 +171,40 @@ export class ResultsService {
     if (!version || version.eventId !== eventId) {
       throw new NotFoundException({ code: 'RESULT_VERSION_NOT_FOUND', message: 'No such published result version on this event.' });
     }
-    return version;
+    const correctedSubmissionId = await this.deriveCorrectedSubmissionId(eventId, version);
+    return { ...version, correctedSubmissionId };
+  }
+
+  // Section 7's "a corrected entry is visibly marked... never presented
+  // identically to an original result" needs to know *which* row a
+  // correction touched — but neither RankResultEntry nor
+  // PublishedResultVersion stores that (only the version-level
+  // `correctionReason`, and only SCORE_OVERRIDE happens to leave its
+  // own row-level flag via `isScoreOverridden`; REORDER leaves no
+  // marker at all). Rather than a schema migration to add a field
+  // createCorrection would need to start populating, this derives the
+  // answer the same way Module 9's raw-ranking gap was closed: diff
+  // this version's entries against the immediately-previous version's
+  // (by submissionId) — the row that differs is the one the correction
+  // touched. Read-only, computed on read, never persisted.
+  private async deriveCorrectedSubmissionId(
+    eventId: string,
+    version: { versionNumber: number; correctionReason: string | null; rankEntries: { submissionId: string; rank: number; displayScore: number; isDisqualified: boolean }[] },
+  ): Promise<string | null> {
+    if (!version.correctionReason || version.versionNumber <= 1) return null;
+    const previous = await this.prisma.publishedResultVersion.findFirst({
+      where: { eventId, versionNumber: version.versionNumber - 1 },
+      include: { rankEntries: true },
+    });
+    if (!previous) return null;
+    const previousBySubmission = new Map(previous.rankEntries.map((e) => [e.submissionId, e]));
+    for (const entry of version.rankEntries) {
+      const before = previousBySubmission.get(entry.submissionId);
+      if (!before || before.rank !== entry.rank || before.displayScore !== entry.displayScore || before.isDisqualified !== entry.isDisqualified) {
+        return entry.submissionId;
+      }
+    }
+    return null;
   }
 
   // Section 4.2/6 — decoupled entirely from EventPhase. `@Public()` at
@@ -167,7 +232,9 @@ export class ResultsService {
     });
     // No LIVE version — reveal nothing, regardless of EventPhase
     // (Section 6). Never null-coalesce to draft/partial data.
-    return live ?? null;
+    if (!live) return null;
+    const correctedSubmissionId = await this.deriveCorrectedSubmissionId(eventId, live);
+    return { ...live, correctedSubmissionId };
   }
 
   private async maybeAutoPublish(eventId: string): Promise<void> {

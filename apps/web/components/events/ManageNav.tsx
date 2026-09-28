@@ -15,6 +15,7 @@ export function ManageNav({ slug }: { slug: string }) {
     { href: `/events/${slug}/manage/assignments`, label: 'Assignments' },
     { href: `/events/${slug}/manage/judging-progress`, label: 'Progress' },
     { href: `/events/${slug}/manage/normalization`, label: 'Normalization' },
+    { href: `/events/${slug}/manage/results`, label: 'Results' },
     { href: `/events/${slug}/manage/submissions`, label: 'Submissions' },
   ];
   return (

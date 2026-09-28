@@ -137,6 +137,11 @@ export default function EventDetailPage() {
             View gallery
           </Button>
         </Link>
+        <Link href={`/events/${slug}/results`}>
+          <Button fullWidth size="sm" variant="secondary">
+            View results
+          </Button>
+        </Link>
         <Card raised className="flex flex-col gap-3">
           {/* Registration/team/submission self-service is entirely
               absent once archived (design doc's ARCHIVED row) —

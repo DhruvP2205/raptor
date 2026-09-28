@@ -62,7 +62,7 @@ describe('ResultsService', () => {
 
       const result = await service.previewDraft('event-1', 'draft-1');
 
-      const submissionIds = result.rankRows.map((r) => r.submissionId);
+      const submissionIds = result.rankEntries.map((r) => r.submissionId);
       expect(submissionIds).toEqual(['sub-approved']);
       expect(submissionIds).not.toContain('sub-disqualified');
     });
