@@ -80,14 +80,21 @@ export default function TeamPage() {
               You&apos;ll be its admin. Make sure you&apos;ve registered for this event first.
             </p>
             <div className="mt-4">
-              <CreateTeamForm eventId={event.id} onCreated={() => loadTeam(event.id)} />
+              <CreateTeamForm
+                eventId={event.id}
+                onCreated={() => loadTeam(event.id)}
+                onAlreadyOnTeam={() => loadTeam(event.id)}
+              />
             </div>
           </Card>
           <Card>
             <h2 className="font-display text-lg text-ink">Join with a code</h2>
             <p className="mt-1 text-xs text-ink-muted">Get this from your team&apos;s admin.</p>
             <div className="mt-4">
-              <JoinTeamForm onJoined={() => loadTeam(event.id)} />
+              <JoinTeamForm
+                onJoined={() => loadTeam(event.id)}
+                onAlreadyOnTeam={() => loadTeam(event.id)}
+              />
             </div>
           </Card>
         </div>

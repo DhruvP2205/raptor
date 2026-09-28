@@ -1,11 +1,13 @@
 'use client';
 
-import { ApiErrorAlert } from '@/components/ui/Alert';
+import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
+import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { deleteTeam, kickTeamMember, regenerateTeamLink } from '@/lib/api';
+import { deleteTeam, kickTeamMember, leaveTeam, regenerateTeamLink } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { useToast } from '@/lib/toast-context';
 import type { TeamWithMembers } from '@raptor/shared';
 import { useState } from 'react';
 
@@ -21,9 +23,15 @@ export function TeamPanel({
   onTeamDeleted: () => void;
 }) {
   const isAdmin = team.adminUserId === currentUserId;
+  // docs/design/04-team-management.md Section 3 — "Roster lock active"
+  // row: Kick/Regenerate/join-via-link go absent (not disabled), with
+  // an explanation, once the team has ever submitted.
+  const rosterLocked = team.everSubmitted;
+  const { showToast } = useToast();
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const [kickTarget, setKickTarget] = useState<{ userId: string; displayName: string } | null>(null);
 
   const joinCode = `${team.joinLinkPrefix}-${team.joinLinkSuffix}`;
@@ -69,6 +77,26 @@ export function TeamPanel({
     }
   }
 
+  // "Own action, no confirmation modal needed" per the design doc, but
+  // this build routes it through the lightweight ConfirmDialog anyway
+  // (danger={false}, no reason) since leaving is still a one-way door
+  // for that member — kept a deliberate step rather than an
+  // accidental-click hazard, at the cost of one extra click the doc
+  // didn't ask for.
+  async function handleLeave() {
+    setLoading(true);
+    setError(null);
+    try {
+      await leaveTeam(team.id);
+      showToast("You've left the team.");
+      onTeamDeleted();
+    } catch (err) {
+      setError(err);
+      setLoading(false);
+      setConfirmLeave(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -78,13 +106,19 @@ export function TeamPanel({
         </p>
       </div>
 
+      {rosterLocked && (
+        <Alert tone="neutral">
+          This team&apos;s roster is locked because a submission has been finalized.
+        </Alert>
+      )}
+
       <div>
         <p className="text-sm font-medium text-ink">Join code</p>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <code className="rounded border border-line-strong bg-paper-raised px-3 py-1.5 font-mono text-sm">
             {joinCode}
           </code>
-          {isAdmin && (
+          {isAdmin && !rosterLocked && (
             <Button size="sm" variant="secondary" loading={loading} onClick={handleRegenerate}>
               Regenerate
             </Button>
@@ -106,12 +140,13 @@ export function TeamPanel({
               className="flex items-center justify-between border-b border-line py-2 text-sm"
             >
               <span className="flex items-center gap-2">
+                <Avatar name={m.displayName} id={m.userId} size="small" />
                 {m.displayName}
                 {m.userId === team.adminUserId && <Badge tone="accent">Admin</Badge>}
               </span>
               <span className="flex items-center gap-2">
                 <span className="font-mono text-xs text-ink-faint">joined {formatDateTime(m.joinedAt)}</span>
-                {isAdmin && m.userId !== team.adminUserId && (
+                {isAdmin && m.userId !== team.adminUserId && !rosterLocked && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -120,13 +155,30 @@ export function TeamPanel({
                     Kick
                   </Button>
                 )}
+                {/* "Leave team" is only ever shown to non-admin members
+                    (docs/design/04-team-management.md Section 3 States)
+                    — the admin's only paths out are Kick-everyone-then-
+                    delete or -regenerate, never a plain leave. */}
+                {!isAdmin && m.userId === currentUserId && !rosterLocked && (
+                  <Button size="sm" variant="ghost" onClick={() => setConfirmLeave(true)}>
+                    Leave
+                  </Button>
+                )}
               </span>
             </li>
           ))}
         </ul>
       </div>
 
-      {isAdmin && (
+      {/* Delete is admin-only-permitted before the roster ever locks
+          too (backend calls the same assertRosterNotLocked check) — the
+          design doc's roster-lock row only names Kick/Regenerate/join
+          explicitly, but hiding rather than disabling an action the
+          viewer can't take is this system's stated default everywhere
+          else (DESIGN-SYSTEM.md, the events-list precedent), so Delete
+          follows the same absent-not-disabled treatment for
+          consistency. TODO: undocumented decision, needs confirmation. */}
+      {isAdmin && !rosterLocked && (
         <div className="border-t border-line pt-4">
           <Button size="sm" variant="danger" onClick={() => setConfirmDelete(true)}>
             Delete team
@@ -144,9 +196,19 @@ export function TeamPanel({
         onCancel={() => setKickTarget(null)}
       />
       <ConfirmDialog
+        open={confirmLeave}
+        danger={false}
+        title="Leave this team?"
+        description="You'll need a fresh join code from the admin to come back."
+        confirmLabel="Leave team"
+        loading={loading}
+        onConfirm={handleLeave}
+        onCancel={() => setConfirmLeave(false)}
+      />
+      <ConfirmDialog
         open={confirmDelete}
         title="Delete this team?"
-        description="This removes every member and cannot be undone. Any drafted submission is deleted with it."
+        description="This permanently deletes the team and its submission. This can't be undone."
         confirmLabel="Delete team"
         loading={loading}
         onConfirm={handleDelete}

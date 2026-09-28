@@ -30,8 +30,10 @@ function deadlineLabel(event: PublicEvent): string {
 
 // Deterministic (by name, not random) so a card doesn't change color on
 // every re-render — a grid of no-poster events still reads as varied
-// rather than a wall of identical placeholders.
-const PLACEHOLDER_TONES = ['bg-ink', 'bg-violet', 'bg-teal', 'bg-accent', 'bg-rose'];
+// rather than a wall of identical placeholders. Restricted to the
+// system's own restrained palette (DESIGN-SYSTEM.md 3 has no separate
+// decorative-hue set) rather than the dropped violet/teal/rose trio.
+const PLACEHOLDER_TONES = ['bg-ink', 'bg-accent', 'bg-ink-muted', 'bg-success', 'bg-warning'];
 
 function PosterPlaceholder({ name }: { name: string }) {
   const initial = name.trim().charAt(0).toUpperCase() || '?';
@@ -48,7 +50,7 @@ export function EventCard({ event }: { event: PublicEvent }) {
   const poster = resolveMediaUrl(event.posterUrl);
   return (
     <Link href={`/events/${event.slug}`} className="block">
-      <Card className="flex h-full flex-col gap-0 overflow-hidden p-0 transition-all hover:-translate-y-0.5 hover:border-accent hover:shadow-popover">
+      <Card className="flex h-full flex-col gap-0 overflow-hidden p-0 transition-all hover:-translate-y-0.5 hover:border-accent-to hover:shadow-raised">
         <div className="aspect-[16/9] w-full overflow-hidden bg-paper-raised">
           {poster ? (
             // eslint-disable-next-line @next/next/no-img-element

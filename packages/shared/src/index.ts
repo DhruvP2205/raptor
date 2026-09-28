@@ -63,10 +63,16 @@ export interface PublicEvent {
   submissionsOpenAt: string;
   submissionsCloseAt: string;
   eventEndsAt: string;
+  // Module 8/11's additive timeline fields (apps/api/src/events/dto/create-event.dto.ts) —
+  // were missing from this type entirely until the create-event form's
+  // live-verify surfaced that the backend DTO had required them for a
+  // while (INVALID_TIMELINE_ORDER-adjacent 400 on every submit).
+  judgingClosesAt: string;
   resultsAnnounceAt: string;
   votingOpensAt: string;
   votingClosesAt: string;
   votingWinnerAnnounceAt: string;
+  eventClosedAt: string;
   createdAt: string;
   updatedAt: string;
   phase: EventPhase | null;
@@ -89,6 +95,24 @@ export interface PublicEventMembership {
   invitedAt: string | null;
   respondedAt: string | null;
   createdAt: string;
+}
+
+// GET /events/:eventId/judges — same membership row, plus the joined
+// user summary the organizer dashboard needs (name/email per row) —
+// see MembershipService.listJudgeInvitations's `include`.
+export interface JudgeInvitation extends PublicEventMembership {
+  user: { id: string; email: string; displayName: string };
+}
+
+// GET /invitations/preview — read-only, backs the judge accept/decline
+// screen's "event name, event dates" display (docs/design/02-roles-and-membership.md
+// Section 4) before Accept/Decline are shown.
+export interface InvitationPreview {
+  eventId: string;
+  eventName: string;
+  eventStartsAt: string;
+  eventEndsAt: string;
+  status: InvitationStatus;
 }
 
 export interface Track {
@@ -134,6 +158,10 @@ export interface TeamMembership {
 // after the initial create/join response (D85, docs/DECISIONS.md).
 export interface TeamWithMembers extends Team {
   members: Array<{ userId: string; displayName: string; joinedAt: string }>;
+  // Mirrors Submission.everSubmitted for this team's submission (false
+  // if none exists yet) — backs the roster-lock UI in
+  // docs/design/04-team-management.md Section 3.
+  everSubmitted: boolean;
 }
 
 export interface Submission {
@@ -154,6 +182,51 @@ export interface Submission {
   everSubmitted: boolean;
   createdAt: string;
   updatedAt: string;
+  // Only present on GET /submissions/:id and the gallery list
+  // (docs/design/05-submission-management.md) — a human-readable name
+  // (team name or solo submitter's display name), since the raw
+  // teamId/soloUserId foreign keys aren't useful to render directly.
+  submitterName?: string | null;
+  // Only present on GET /submissions/:id, and only populated for an
+  // organizer/admin viewer — null for the owner and for the public
+  // (Section 4's "verification-status panel... organizer/admin only").
+  verification?: { finalDecision: 'PENDING_REVIEW' | 'APPROVED' | 'DISQUALIFIED' } | null;
+}
+
+export type CheckStatus =
+  | 'NOT_RUN'
+  | 'VERIFIED'
+  | 'SUSPICIOUS'
+  | 'REJECTED'
+  | 'PRIVATE'
+  | 'NON_GITHUB'
+  | 'ERROR';
+
+// GET /events/:eventId/verifications (and per-row detail) — Module 6's
+// organizer-facing review queue. See VerificationService.toPublic.
+export interface VerificationRow {
+  submissionId: string;
+  eventId: string;
+  title: string | null;
+  submitterName: string | null;
+  repoUrl: string | null;
+  submittedAt: string | null;
+  checkStatus: CheckStatus;
+  finalDecision: 'PENDING_REVIEW' | 'APPROVED' | 'DISQUALIFIED';
+  firstCommitAt: string | null;
+  lastCommitAt: string | null;
+  totalCommits: number;
+  commitsInWindow: number;
+  outsideWindowCommits: Array<{
+    sha: string;
+    timestamp: string;
+    message: string;
+    author: string;
+  }>;
+  finalDecisionRemarks: string | null;
+  reviewedByUserId: string | null;
+  checkedAt: string | null;
+  reviewedAt: string | null;
 }
 
 // siteAdmin's "drafts in progress" list — deliberately not `Submission`;

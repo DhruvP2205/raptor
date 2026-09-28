@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { EventRole, type User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireEventRole } from '../authz/decorators/require-event-role.decorator';
@@ -63,6 +63,12 @@ export class MembershipController {
     @Body() dto: UpdateJudgeMembershipDto,
   ) {
     return this.membership.updateJudgeMembership(eventId, membershipId, user.id, dto);
+  }
+
+  // Same not-event-scoped-by-path reasoning as respond() below.
+  @Get('invitations/preview')
+  preview(@CurrentUser() user: User, @Query('token') token: string) {
+    return this.membership.previewInvitation(token, user.id);
   }
 
   // Not event-scoped by path — the token itself determines which

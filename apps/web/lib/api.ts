@@ -1,5 +1,7 @@
 import type {
   DraftInProgressSummary,
+  InvitationPreview,
+  JudgeInvitation,
   PublicEvent,
   PublicEventMembership,
   PublicUser,
@@ -9,6 +11,7 @@ import type {
   TeamWithMembers,
   Track,
   Prize,
+  VerificationRow,
   ApiErrorBody,
 } from '@raptor/shared';
 
@@ -139,10 +142,12 @@ export type EventTimelineInput = {
   submissionsOpenAt: string;
   submissionsCloseAt: string;
   eventEndsAt: string;
+  judgingClosesAt: string;
   resultsAnnounceAt: string;
   votingOpensAt: string;
   votingClosesAt: string;
   votingWinnerAnnounceAt: string;
+  eventClosedAt: string;
 };
 
 export function listEvents(phase?: string) {
@@ -276,8 +281,42 @@ export function kickTeamMember(teamId: string, userId: string) {
   return apiFetch<void>(`/teams/${teamId}/members/${userId}`, { method: 'DELETE' });
 }
 
+export function leaveTeam(teamId: string) {
+  return apiFetch<void>(`/teams/${teamId}/leave`, { method: 'POST' });
+}
+
 export function deleteTeam(teamId: string) {
   return apiFetch<void>(`/teams/${teamId}`, { method: 'DELETE', body: { confirm: true } });
+}
+
+// --- Roles & membership (judge invitations) ---
+
+export function inviteJudge(eventId: string, email: string) {
+  return apiFetch<PublicEventMembership>(`/events/${eventId}/judges`, {
+    method: 'POST',
+    body: { email },
+  });
+}
+
+export function listJudgeInvitations(eventId: string) {
+  return apiFetch<JudgeInvitation[]>(`/events/${eventId}/judges`);
+}
+
+export function resendJudgeInvitation(eventId: string, membershipId: string) {
+  return apiFetch<PublicEventMembership>(`/events/${eventId}/judges/${membershipId}/resend`, {
+    method: 'POST',
+  });
+}
+
+export function previewInvitation(token: string) {
+  return apiFetch<InvitationPreview>(`/invitations/preview?token=${encodeURIComponent(token)}`);
+}
+
+export function respondToInvitation(token: string, accept: boolean) {
+  return apiFetch<PublicEventMembership>('/invitations/respond', {
+    method: 'POST',
+    body: { token, accept },
+  });
 }
 
 // --- Submissions ---
@@ -300,6 +339,39 @@ export function listDraftsInProgress(eventId: string) {
 
 export function getSubmission(id: string) {
   return apiFetch<Submission>(`/submissions/${id}`);
+}
+
+// --- Verification (Module 6) ---
+
+export function listVerifications(eventId: string, checkStatus?: string, finalDecision?: string) {
+  const params = new URLSearchParams();
+  if (checkStatus) params.set('checkStatus', checkStatus);
+  if (finalDecision) params.set('finalDecision', finalDecision);
+  const qs = params.toString();
+  return apiFetch<VerificationRow[]>(`/events/${eventId}/verifications${qs ? `?${qs}` : ''}`);
+}
+
+export type VerificationTriggerInput =
+  | { scope: 'ALL'; includeAlreadyChecked?: boolean }
+  | { scope: 'FILTER'; filter: { checkStatus?: string[]; finalDecision?: string[] } }
+  | { scope: 'TARGETED'; submissionIds: string[] };
+
+export function triggerVerificationRun(eventId: string, input: VerificationTriggerInput) {
+  return apiFetch<{ queued: number }>(`/events/${eventId}/verifications/run`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export function reviewVerification(
+  eventId: string,
+  submissionId: string,
+  input: { finalDecision: 'APPROVED' | 'DISQUALIFIED'; remarks?: string },
+) {
+  return apiFetch<{ finalDecision: string; finalDecisionRemarks: string | null }>(
+    `/events/${eventId}/verifications/${submissionId}/review`,
+    { method: 'POST', body: input },
+  );
 }
 
 export function patchSubmission(

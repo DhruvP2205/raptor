@@ -9,6 +9,8 @@ export function ManageNav({ slug }: { slug: string }) {
   const tabs = [
     { href: `/events/${slug}/manage`, label: 'Overview' },
     { href: `/events/${slug}/manage/tracks-prizes`, label: 'Tracks & prizes' },
+    { href: `/events/${slug}/manage/judges`, label: 'Judges' },
+    { href: `/events/${slug}/manage/verification`, label: 'Verification' },
     { href: `/events/${slug}/manage/submissions`, label: 'Submissions' },
   ];
   return (

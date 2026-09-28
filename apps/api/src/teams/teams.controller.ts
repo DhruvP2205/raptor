@@ -33,6 +33,12 @@ export class TeamsController {
     return this.teams.joinTeam(user.id, dto.code);
   }
 
+  @Post('teams/:teamId/leave')
+  @HttpCode(204)
+  async leave(@Param('teamId') teamId: string, @CurrentUser() user: User) {
+    await this.teams.leaveTeam(teamId, user.id);
+  }
+
   @Post('teams/:teamId/regenerate-link')
   regenerateLink(@Param('teamId') teamId: string, @CurrentUser() user: User) {
     return this.teams.regenerateLink(teamId, user.id);

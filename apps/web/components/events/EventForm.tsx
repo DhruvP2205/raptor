@@ -14,17 +14,19 @@ const TIMELINE_FIELDS: { key: keyof EventTimelineInput; label: string }[] = [
   { key: 'submissionsOpenAt', label: 'Submissions open' },
   { key: 'submissionsCloseAt', label: 'Submissions close' },
   { key: 'eventEndsAt', label: 'Event ends' },
+  { key: 'judgingClosesAt', label: 'Judging closes' },
   { key: 'resultsAnnounceAt', label: 'Results announced' },
   { key: 'votingOpensAt', label: 'Voting opens' },
   { key: 'votingClosesAt', label: 'Voting closes' },
   { key: 'votingWinnerAnnounceAt', label: 'Winners announced' },
+  { key: 'eventClosedAt', label: 'Event closes' },
 ];
 
 // Matches the exact ordering chain apps/api/src/events/utils/event-timeline.ts
 // enforces server-side — this is a UX hint only, the server re-validates
 // regardless of what the form lets the user type.
 const ORDER_HINT =
-  'Registration opens < closes ≤ event starts < submissions open < close ≤ event ends < results announced < voting opens < closes < winners announced.';
+  'Registration opens < closes ≤ event starts < submissions open < close ≤ event ends < judging closes ≤ results announced < voting opens < closes < winners announced < event closes.';
 
 interface EventFormValues extends EventTimelineInput {}
 
@@ -49,10 +51,12 @@ export function EventForm({
     submissionsOpenAt: initial?.submissionsOpenAt ?? '',
     submissionsCloseAt: initial?.submissionsCloseAt ?? '',
     eventEndsAt: initial?.eventEndsAt ?? '',
+    judgingClosesAt: initial?.judgingClosesAt ?? '',
     resultsAnnounceAt: initial?.resultsAnnounceAt ?? '',
     votingOpensAt: initial?.votingOpensAt ?? '',
     votingClosesAt: initial?.votingClosesAt ?? '',
     votingWinnerAnnounceAt: initial?.votingWinnerAnnounceAt ?? '',
+    eventClosedAt: initial?.eventClosedAt ?? '',
   });
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);

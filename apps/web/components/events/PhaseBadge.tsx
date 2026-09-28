@@ -1,25 +1,25 @@
-import { Badge } from '@/components/ui/Badge';
+import { Badge, type Tone } from '@/components/ui/Badge';
 import { PHASE_LABELS } from '@/lib/format';
 import type { EventPhase, EventStatus } from '@raptor/shared';
 
-type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'violet' | 'teal' | 'rose';
-
-// Deliberately varied, not a single "everything is blue or gray"
-// palette — each phase family gets its own hue so a grid of event
-// cards actually reads as different states at a glance, not a wall of
-// identical gray dots (D89, docs/DECISIONS.md).
+// DESIGN-SYSTEM.md 3.2 collapses every status pill to exactly four
+// tones — no per-phase rainbow (that was D89's earlier, now-superseded
+// call). Mapping follows the doc's own worked examples verbatim:
+// "Judging, registration open, voting open" -> live; "Results
+// announced ... approved" -> success; "Archived, draft, inactive" ->
+// neutral; "disqualified, rejected, error" -> danger.
 const PHASE_TONE: Record<EventPhase, Tone> = {
-  NOT_STARTED: 'violet',
-  REGISTRATION_OPEN: 'success',
+  NOT_STARTED: 'neutral',
+  REGISTRATION_OPEN: 'live',
   REGISTRATION_CLOSED: 'neutral',
-  IN_PROGRESS: 'accent',
-  SUBMISSIONS_OPEN: 'teal',
+  IN_PROGRESS: 'live',
+  SUBMISSIONS_OPEN: 'live',
   SUBMISSIONS_CLOSED: 'neutral',
-  JUDGING: 'warning',
-  RESULTS_ANNOUNCED: 'rose',
-  VOTING_OPEN: 'teal',
+  JUDGING: 'live',
+  RESULTS_ANNOUNCED: 'success',
+  VOTING_OPEN: 'live',
   VOTING_CLOSED: 'neutral',
-  VOTING_WINNER_ANNOUNCED: 'rose',
+  VOTING_WINNER_ANNOUNCED: 'success',
 };
 
 export function PhaseBadge({ phase }: { phase: EventPhase | null }) {
@@ -30,7 +30,7 @@ export function PhaseBadge({ phase }: { phase: EventPhase | null }) {
 const STATUS_TONE: Record<EventStatus, Tone> = {
   DRAFT: 'neutral',
   PUBLISHED: 'success',
-  ARCHIVED: 'warning',
+  ARCHIVED: 'neutral',
   DELETED: 'danger',
 };
 

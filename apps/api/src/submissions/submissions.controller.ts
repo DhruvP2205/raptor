@@ -1,9 +1,8 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { EventRole, type User } from '@prisma/client';
+import { type User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequireEventRole } from '../authz/decorators/require-event-role.decorator';
+import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { RequireSiteAdmin } from '../authz/decorators/require-site-admin.decorator';
-import { EventRoleGuard } from '../authz/guards/event-role.guard';
 import { SiteAdminGuard } from '../authz/guards/site-admin.guard';
 import { UpdateSubmissionDto } from './dto/update-submission.dto';
 import { SubmissionsService } from './submissions.service';
@@ -26,11 +25,25 @@ export class SubmissionsController {
     return this.submissions.getMine(eventId, user.id);
   }
 
+  // Was organizer-only; opened up per docs/design/05-submission-management.md
+  // Section 3 (public gallery) — stages/05-submission-management.md
+  // Section 6 explicitly anticipated this exact moment ("Only once the
+  // broader gallery-visibility feature is built... the isDraft flag is
+  // exactly what that feature will filter on"), so this isn't a
+  // loosening of an intentional restriction, it's finishing a
+  // deliberately-deferred one. Already only ever returns isDraft:false
+  // rows — no new field exposure, just a wider set of allowed callers.
+  // Still needs the event's own draft-visibility check (a submission
+  // list for a DRAFT event is exactly as sensitive as the event itself)
+  // — organizers/admins pass that the same way getEventBySlug's callers
+  // do, so this doesn't change their existing view.
   @Get('events/:eventId/submissions')
-  @RequireEventRole(EventRole.ORGANIZER)
-  @UseGuards(EventRoleGuard)
-  listSubmitted(@Param('eventId') eventId: string) {
-    return this.submissions.listSubmittedForEvent(eventId);
+  @OptionalAuth()
+  listSubmitted(@Param('eventId') eventId: string, @CurrentUser() user?: User) {
+    return this.submissions.listSubmittedForEvent(
+      eventId,
+      user ? { id: user.id, siteAdmin: user.siteAdmin } : null,
+    );
   }
 
   @Get('events/:eventId/submissions/drafts')
@@ -42,11 +55,15 @@ export class SubmissionsController {
 
   // Not event-scoped in the URL — the submission id alone is enough to
   // resolve it, same reasoning as Module 4's team routes (D78). The
-  // service itself checks owner/organizer/admin visibility (Section 6),
-  // since there's no :eventId here for EventRoleGuard to resolve.
+  // service itself checks owner/organizer/admin visibility (Section 6).
+  // OptionalAuth per docs/design/05-submission-management.md Section 4
+  // — a submitted (non-draft) submission is public; the service still
+  // 404s a draft for anyone but its owner/organizer/admin, same as
+  // before, an anonymous caller included.
   @Get('submissions/:id')
-  getById(@Param('id') id: string, @CurrentUser() user: User) {
-    return this.submissions.getById(id, user);
+  @OptionalAuth()
+  getById(@Param('id') id: string, @CurrentUser() user?: User) {
+    return this.submissions.getById(id, user ?? null);
   }
 
   @Patch('submissions/:id')

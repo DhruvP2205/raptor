@@ -264,6 +264,50 @@ export class MembershipService {
     return toPublicMembership(updated);
   }
 
+  // Read-only lookup backing the frontend's accept/decline screen
+  // (docs/design/02-roles-and-membership.md Section 4 — "Shows: event
+  // name, event dates" before Accept/Decline are even shown). Neither
+  // Module 2's stage doc nor the membership controller had a
+  // non-mutating way to resolve a token to display info before this —
+  // TODO: undocumented decision, needs confirmation. Modeled directly
+  // on respondToInvitation's own lookup/validation so the two stay
+  // consistent (same generic "invalid" error, same lazy expiry check),
+  // but returns state instead of throwing for the idempotent cases
+  // (already responded / expired) since the frontend renders those as
+  // screens, not errors.
+  async previewInvitation(
+    rawToken: string,
+    userId: string,
+  ): Promise<{
+    eventId: string;
+    eventName: string;
+    eventStartsAt: Date;
+    eventEndsAt: Date;
+    status: EventMembership['invitationStatus'];
+  }> {
+    const tokenHash = sha256Hex(rawToken);
+    const membership = await this.prisma.eventMembership.findUnique({
+      where: { invitationTokenHash: tokenHash },
+      include: { event: { select: { id: true, name: true, eventStartsAt: true, eventEndsAt: true } } },
+    });
+
+    if (!membership || membership.userId !== userId) {
+      throw new UnauthorizedException({
+        code: 'INVALID_INVITATION_TOKEN',
+        message: 'This invitation link is invalid.',
+      });
+    }
+
+    const current = await this.expireIfPastDeadline(membership);
+    return {
+      eventId: membership.event.id,
+      eventName: membership.event.name,
+      eventStartsAt: membership.event.eventStartsAt,
+      eventEndsAt: membership.event.eventEndsAt,
+      status: current.invitationStatus,
+    };
+  }
+
   async respondToInvitation(
     rawToken: string,
     userId: string,

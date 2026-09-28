@@ -47,8 +47,18 @@ export class TeamsService {
       });
     }
     const { team } = membership;
+    // The frontend's roster-lock messaging (docs/design/04-team-management.md
+    // Section 3 — Kick/Regenerate/join-via-link go absent, with an
+    // explanation, once locked) needs to know this without a second
+    // round trip; same `everSubmitted` flag assertRosterNotLocked below
+    // checks server-side on every mutating action regardless.
+    const submission = await this.prisma.submission.findUnique({
+      where: { teamId: team.id },
+      select: { everSubmitted: true },
+    });
     return {
       ...team,
+      everSubmitted: submission?.everSubmitted ?? false,
       members: team.members.map((m) => ({
         userId: m.userId,
         displayName: m.user.displayName,
@@ -176,6 +186,48 @@ export class TeamsService {
       eventId: team.eventId,
       teamId,
       targetUserId,
+    });
+  }
+
+  // Added per docs/design/04-team-management.md Section 3 States
+  // ("Leave team" shown to non-admin members, "own action, no
+  // confirmation modal needed") — the module-level comment above
+  // originally read the backend spec's silence on this as deliberate,
+  // but the frontend design pass wants it and there's no real reason a
+  // non-admin member shouldn't be able to remove themselves the same
+  // way an admin removes them (same roster-lock condition, no
+  // additional risk). TODO: undocumented decision, needs confirmation
+  // against stages/04-team-management.md, which never named this
+  // action either way.
+  async leaveTeam(teamId: string, actingUserId: string): Promise<void> {
+    const team = await this.getTeamOrThrow(teamId);
+    if (actingUserId === team.adminUserId) {
+      // Unconditional, not just "while others remain" — an admin
+      // leaving even as the sole member would orphan the team (a team
+      // is never, at any point, without an admin/member — Section 6).
+      // The admin's only paths off a team are Delete or, once solo,
+      // Regenerate-and-restart; "leave" isn't one of them at all.
+      throw new BadRequestException({
+        code: 'ADMIN_CANNOT_LEAVE',
+        message:
+          'The admin cannot leave this team — kick every other member first, then delete the team or regenerate the join link to stay solo.',
+      });
+    }
+    await this.assertRosterNotLocked(team.id);
+
+    const deleted = await this.prisma.teamMembership.deleteMany({
+      where: { teamId, userId: actingUserId },
+    });
+    if (deleted.count === 0) {
+      throw new NotFoundException({
+        code: 'NOT_A_MEMBER',
+        message: 'You are not a member of this team.',
+      });
+    }
+
+    await this.audit.record(actingUserId, 'TEAM_MEMBER_LEFT', {
+      eventId: team.eventId,
+      teamId,
     });
   }
 

@@ -1,6 +1,22 @@
-import { Badge } from '@/components/ui/Badge';
+import { Alert } from '@/components/ui/Alert';
+import { Badge, type Tone } from '@/components/ui/Badge';
 import { formatDateTime } from '@/lib/format';
 import type { Submission } from '@raptor/shared';
+
+// docs/design/05-submission-management.md Section 4 — verification
+// status visible to organizer/admin only; the backend only ever
+// populates `verification` for that viewer in the first place, so this
+// component doesn't need its own visibility check, just a render.
+const VERIFICATION_TONE: Record<string, Tone> = {
+  PENDING_REVIEW: 'live',
+  APPROVED: 'success',
+  DISQUALIFIED: 'danger',
+};
+const VERIFICATION_LABEL: Record<string, string> = {
+  PENDING_REVIEW: 'Pending review',
+  APPROVED: 'Approved',
+  DISQUALIFIED: 'Disqualified',
+};
 
 // Read-only rendering of a finalized/draft submission — used by both
 // the submission editor's preview and the standalone /submissions/[id]
@@ -8,11 +24,23 @@ import type { Submission } from '@raptor/shared';
 export function SubmissionCard({ submission }: { submission: Submission }) {
   return (
     <div className="flex flex-col gap-4">
+      {submission.verification && (
+        <Alert tone="neutral" className="flex items-center gap-2">
+          <span className="text-xs font-medium text-ink-muted">Verification (organizer view):</span>
+          <Badge tone={VERIFICATION_TONE[submission.verification.finalDecision]}>
+            {VERIFICATION_LABEL[submission.verification.finalDecision]}
+          </Badge>
+        </Alert>
+      )}
+
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={submission.isDraft ? 'warning' : 'success'}>
+        <Badge tone={submission.isDraft ? 'neutral' : 'success'}>
           {submission.isDraft ? 'Draft' : 'Submitted'}
         </Badge>
         <Badge tone="neutral">{submission.submissionType === 'TEAM' ? 'Team' : 'Solo'}</Badge>
+        {submission.submitterName && (
+          <span className="text-sm text-ink-muted">by {submission.submitterName}</span>
+        )}
         {submission.submittedAt && (
           <span className="font-mono text-xs text-ink-faint">
             Last submitted {formatDateTime(submission.submittedAt)}

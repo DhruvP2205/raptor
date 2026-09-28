@@ -74,6 +74,14 @@ export default function EventDetailPage() {
           <h1 className="mt-2 font-display text-3xl text-ink">{event.name}</h1>
         </div>
 
+        {/* docs/design/03-event-management.md Section 2 States —
+            "Loaded, ARCHIVED" row: persistent note, and registration/
+            team/submission actions are absent entirely (archived means
+            done). Was missing outright before this pass. */}
+        {event.status === 'ARCHIVED' && (
+          <Alert tone="neutral">This event has concluded.</Alert>
+        )}
+
         {event.descriptionHtml && (
           <div className="prose-content" dangerouslySetInnerHTML={{ __html: event.descriptionHtml }} />
         )}
@@ -121,8 +129,20 @@ export default function EventDetailPage() {
       </div>
 
       <aside className="flex flex-col gap-4">
+        {/* Public regardless of viewer/account type or archived status
+            — the gallery is a listing of finalized submissions, not a
+            self-service action (design doc Section 3). */}
+        <Link href={`/events/${slug}/gallery`}>
+          <Button fullWidth size="sm" variant="secondary">
+            View gallery
+          </Button>
+        </Link>
         <Card raised className="flex flex-col gap-3">
-          {!user && (
+          {/* Registration/team/submission self-service is entirely
+              absent once archived (design doc's ARCHIVED row) —
+              organizer/judge info below is unaffected, this only gates
+              the anonymous and participant blocks. */}
+          {event.status !== 'ARCHIVED' && !user && (
             <>
               <p className="text-sm text-ink-muted">Log in to register for this event.</p>
               <Link href="/login">
@@ -132,7 +152,7 @@ export default function EventDetailPage() {
               </Link>
             </>
           )}
-          {user && user.accountType === 'PARTICIPANT' && (
+          {event.status !== 'ARCHIVED' && user && user.accountType === 'PARTICIPANT' && (
             <>
               <ApiErrorAlert error={registerError} />
               {registerState === 'done' ? (
@@ -160,6 +180,21 @@ export default function EventDetailPage() {
                 Manage event
               </Button>
             </Link>
+          )}
+          {/* docs/design/03-event-management.md's judge state (added per
+              design-review-audit.md Finding 1 — this branch didn't
+              exist before). Optimistic, same as the Organizer case
+              above: shown for any judge account rather than gated on a
+              real per-event membership check (no cheap way to make one
+              yet). No link into "My assigned projects" since Module 7
+              isn't built. */}
+          {user && user.accountType === 'JUDGE' && (
+            <>
+              <p className="text-sm font-medium text-ink">You&apos;re judging this event.</p>
+              <p className="text-xs text-ink-muted">
+                Assigned submissions will appear here once judging opens.
+              </p>
+            </>
           )}
         </Card>
       </aside>

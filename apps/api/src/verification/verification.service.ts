@@ -67,7 +67,11 @@ export class VerificationService {
           ? { verification: { is: verificationIs } }
           : {}),
       },
-      include: { verification: true },
+      include: {
+        verification: true,
+        team: { select: { name: true } },
+        soloUser: { select: { displayName: true } },
+      },
       orderBy: { submittedAt: 'asc' },
     });
 
@@ -197,7 +201,11 @@ export class VerificationService {
   private async getSubmissionInEventOrThrow(eventId: string, submissionId: string) {
     const submission = await this.prisma.submission.findUnique({
       where: { id: submissionId },
-      include: { verification: true },
+      include: {
+        verification: true,
+        team: { select: { name: true } },
+        soloUser: { select: { displayName: true } },
+      },
     });
     // Same 404-for-both-cases shape as Submissions Module 5 (D81) — a
     // submission that exists but belongs to a different event must be
@@ -217,6 +225,8 @@ export class VerificationService {
     title: string | null;
     repoUrl: string | null;
     submittedAt: Date | null;
+    team?: { name: string } | null;
+    soloUser?: { displayName: string } | null;
     verification: {
       checkStatus: string;
       finalDecision: string;
@@ -235,6 +245,12 @@ export class VerificationService {
       submissionId: submission.id,
       eventId: submission.eventId,
       title: submission.title,
+      // The design doc's table wants "team" per row — the raw
+      // Submission row has no name-bearing field, same gap Module 5's
+      // gallery hit (its own toPublicSubmission doesn't join this
+      // either, by design — kept generic there since most callers don't
+      // need it).
+      submitterName: submission.team?.name ?? submission.soloUser?.displayName ?? null,
       repoUrl: submission.repoUrl,
       submittedAt: submission.submittedAt,
       // A submission that's never been checked has no row yet — surface

@@ -8,7 +8,7 @@ export function Card({
   return (
     <div
       className={cn(
-        'rounded border border-line p-5',
+        'rounded-lg border border-line p-4', // DESIGN-SYSTEM.md 4: radius-lg-ish card, 16px padding
         raised ? 'bg-paper-raised' : 'bg-white',
         className,
       )}
@@ -17,6 +17,8 @@ export function Card({
   );
 }
 
+// DESIGN-SYSTEM.md 4 — page max-width 1200px, 24px desktop / 16px mobile
+// horizontal padding.
 export function Container({ className, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn('mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8', className)} {...rest} />;
+  return <div className={cn('mx-auto w-full max-w-page px-4 sm:px-6', className)} {...rest} />;
 }

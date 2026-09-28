@@ -85,15 +85,20 @@ export class SubmissionsService {
     return this.toPublicSubmission(submission);
   }
 
-  // Visibility per Section 6: owner always; organizer/admin only once
-  // submitted, and a draft is genuinely invisible to both (404, not a
-  // 403 that would confirm a draft exists) — see D81 in
-  // docs/DECISIONS.md for why this collapses to the same 404 for both
-  // "not found" and "found but a draft you can't see."
-  async getById(submissionId: string, caller: User) {
+  // Visibility per Section 6, extended by docs/design/05-submission-management.md
+  // Section 4 (the deliberately-deferred "public gallery" feature
+  // stages/05-submission-management.md's own Section 6 pointed at):
+  // owner always; organizer/admin always once submitted (plus a
+  // verification-status panel only they see); a draft is genuinely
+  // invisible to everyone else, caller included, including anonymous
+  // (404, not a 403 that would confirm a draft exists — D81); and now,
+  // once submitted, **anyone at all**, matching `isDraft: false` being
+  // exactly the field the backend doc named for this.
+  async getById(submissionId: string, caller: { id: string; siteAdmin: boolean } | null) {
     const submission = await this.getSubmissionOrThrow(submissionId);
 
-    if (await this.isOwner(submission, caller.id)) {
+    const owner = caller ? await this.isOwner(submission, caller.id) : false;
+    if (owner) {
       return this.toPublicSubmission(submission);
     }
 
@@ -104,24 +109,54 @@ export class SubmissionsService {
       });
     }
 
-    if (caller.siteAdmin) {
-      return this.toPublicSubmission(submission);
+    // Submitted (non-draft): public from here — but an organizer/admin
+    // additionally gets the verification-status panel the design doc
+    // calls for, so it's still worth knowing which caller this is.
+    let verification: { finalDecision: string } | null = null;
+    if (caller?.siteAdmin) {
+      verification = await this.getVerificationSummary(submissionId);
+    } else if (caller) {
+      const organizerMembership = await this.prisma.eventMembership.findUnique({
+        where: { userId_eventId: { userId: caller.id, eventId: submission.eventId } },
+      });
+      if (
+        organizerMembership?.role === 'ORGANIZER' &&
+        organizerMembership.invitationStatus === 'ACCEPTED'
+      ) {
+        verification = await this.getVerificationSummary(submissionId);
+      }
     }
 
-    const organizerMembership = await this.prisma.eventMembership.findUnique({
-      where: { userId_eventId: { userId: caller.id, eventId: submission.eventId } },
-    });
-    if (
-      organizerMembership?.role === 'ORGANIZER' &&
-      organizerMembership.invitationStatus === 'ACCEPTED'
-    ) {
-      return this.toPublicSubmission(submission);
-    }
+    const submitterName = await this.getSubmitterName(submission);
+    return { ...this.toPublicSubmission(submission), submitterName, verification };
+  }
 
-    throw new NotFoundException({
-      code: 'SUBMISSION_NOT_FOUND',
-      message: 'No such submission.',
+  private async getSubmitterName(submission: Submission): Promise<string | null> {
+    if (submission.teamId) {
+      const team = await this.prisma.team.findUnique({
+        where: { id: submission.teamId },
+        select: { name: true },
+      });
+      return team?.name ?? null;
+    }
+    if (submission.soloUserId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: submission.soloUserId },
+        select: { displayName: true },
+      });
+      return user?.displayName ?? null;
+    }
+    return null;
+  }
+
+  private async getVerificationSummary(
+    submissionId: string,
+  ): Promise<{ finalDecision: string } | null> {
+    const v = await this.prisma.submissionVerification.findUnique({
+      where: { submissionId },
+      select: { finalDecision: true },
     });
+    return v ? { finalDecision: v.finalDecision } : null;
   }
 
   async patch(submissionId: string, userId: string, dto: UpdateSubmissionDto) {
@@ -213,15 +248,46 @@ export class SubmissionsService {
     return this.toPublicSubmission(updated);
   }
 
-  // Organizer-facing gallery-of-one-event view — full detail, but only
-  // ever the submitted rows (Section 6: organizers have no access to
-  // drafts at all, not even existence).
-  async listSubmittedForEvent(eventId: string) {
+  // Both the organizer's manage-submissions list AND the public gallery
+  // (docs/design/05-submission-management.md Section 3) — always only
+  // the submitted rows (Section 6: organizers have no access to drafts
+  // at all, not even existence; the public never sees drafts either).
+  // The event itself still needs the same draft-visibility check
+  // `EventsService.getEventBySlug` applies — a submission list for a
+  // DRAFT event is exactly as sensitive as the event page itself, so an
+  // organizer/admin passes this the same way they pass that, and
+  // everyone else 404s exactly when they would on the event page too.
+  async listSubmittedForEvent(
+    eventId: string,
+    caller: { id: string; siteAdmin: boolean } | null,
+  ) {
+    const event = await this.getEventOrThrow(eventId);
+    if (event.status !== 'PUBLISHED') {
+      if (!caller) {
+        throw new NotFoundException({ code: 'EVENT_NOT_FOUND', message: 'No such event.' });
+      }
+      if (!caller.siteAdmin) {
+        const membership = await this.prisma.eventMembership.findUnique({
+          where: { userId_eventId: { userId: caller.id, eventId } },
+        });
+        if (!membership || membership.invitationStatus !== 'ACCEPTED') {
+          throw new NotFoundException({ code: 'EVENT_NOT_FOUND', message: 'No such event.' });
+        }
+      }
+    }
+
     const submissions = await this.prisma.submission.findMany({
       where: { eventId, isDraft: false },
       orderBy: { submittedAt: 'asc' },
+      include: { team: { select: { name: true } }, soloUser: { select: { displayName: true } } },
     });
-    return submissions.map((s) => this.toPublicSubmission(s));
+    // Gallery cards need a human name, not a teamId/soloUserId (design
+    // doc Section 3) — toPublicSubmission itself stays generic/unaware
+    // of this join, since most other callers don't need it.
+    return submissions.map(({ team, soloUser, ...s }) => ({
+      ...this.toPublicSubmission(s),
+      submitterName: team?.name ?? soloUser?.displayName ?? null,
+    }));
   }
 
   // siteAdmin-only "drafts in progress" list (Section 6) — ownership and

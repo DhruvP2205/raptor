@@ -1,0 +1,133 @@
+/**
+ * Design tokens for Raptor.
+ * Source of truth: docs/DESIGN-SYSTEM.md — if this file and that doc
+ * disagree, the doc is correct and this file has drifted; fix it here,
+ * not there (same rule CLAUDE.md states for schema vs. DATA-MODEL.md).
+ *
+ * Import this once, globally. Components reference var(--text-primary),
+ * never a raw hex value directly — that's the entire point of the
+ * semantic layer (DESIGN-SYSTEM.md Section 3).
+ */
+
+:root {
+  /* ---- Raw palette (Section 3.1) — referenced only by this file ---- */
+  --raw-gray-900: #111827;
+  --raw-gray-600: #4B5563;
+  --raw-gray-500: #6B7280;
+  --raw-gray-400: #9CA3AF;
+  --raw-gray-200: #E5E7EB;
+  --raw-gray-100: #F3F4F6;
+  --raw-gray-50:  #F9FAFB;
+  --raw-white:    #FFFFFF;
+
+  --raw-blue-700: #1D4ED8;
+  --raw-blue-600: #2563EB;
+  --raw-blue-500: #3B82F6;
+  --raw-blue-50:  #EFF6FF;
+
+  --raw-amber-700: #B45309;
+  --raw-amber-50:  #FFFBEB;
+  --raw-amber-200: #FDE68A;
+
+  --raw-green-700: #15803D;
+  --raw-green-50:  #F0FDF4;
+  --raw-green-200: #BBF7D0;
+
+  --raw-red-700: #B91C1C;
+  --raw-red-600: #DC2626;
+  --raw-red-50:  #FEF2F2;
+  --raw-red-200: #FECACA;
+
+  /* ---- Semantic tokens (Section 3.2) — components use these ---- */
+  --text-primary:     var(--raw-gray-900);
+  --text-secondary:   var(--raw-gray-600);
+  --text-muted:       var(--raw-gray-500);
+  --text-placeholder: var(--raw-gray-400);
+  --text-link:        var(--raw-blue-600);
+  --text-on-primary:  var(--raw-white);
+
+  --surface-page:     var(--raw-gray-50);
+  --surface-default:  var(--raw-white);
+  --surface-hover:    var(--raw-gray-100);
+  --surface-selected: var(--raw-blue-50);
+
+  --border-default: var(--raw-gray-200);
+  --border-hover:   var(--raw-gray-400);
+  --border-focus:   var(--raw-blue-500);
+  --ring-focus:      rgba(59, 130, 246, 0.25); /* blue-500 @ 25% */
+
+  --action-primary-from: var(--raw-blue-600);
+  --action-primary-to:   var(--raw-blue-700);
+  --action-danger-from:  var(--raw-red-600);
+  --action-danger-to:    var(--raw-red-700);
+
+  --status-live-text: var(--raw-amber-700);
+  --status-live-bg:   var(--raw-amber-50);
+  --status-live-border: var(--raw-amber-200);
+
+  --status-success-text: var(--raw-green-700);
+  --status-success-bg:   var(--raw-green-50);
+  --status-success-border: var(--raw-green-200);
+
+  --status-neutral-text: var(--raw-gray-600);
+  --status-neutral-bg:   var(--raw-gray-100);
+  --status-neutral-border: var(--raw-gray-200);
+
+  --status-danger-text: var(--raw-red-700);
+  --status-danger-bg:   var(--raw-red-50);
+  --status-danger-border: var(--raw-red-200);
+
+  /* ---- Typography (Section 2) ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+
+  --text-display-size: 22px;   --text-display-line: 28px;   --text-display-weight: 600;
+  --text-heading-size: 16px;   --text-heading-line: 22px;   --text-heading-weight: 600;
+  --text-body-size: 14px;      --text-body-line: 20px;      --text-body-weight: 400;
+  --text-body-medium-size: 14px; --text-body-medium-line: 20px; --text-body-medium-weight: 500;
+  --text-small-size: 13px;     --text-small-line: 18px;     --text-small-weight: 400;
+  --text-micro-size: 12px;     --text-micro-line: 16px;     --text-micro-weight: 500;
+
+  /* ---- Spacing / sizing (Section 4) ---- */
+  --page-max-width: 1200px;
+  --page-padding-x: 24px;
+  --page-padding-x-mobile: 16px;
+  --header-height: 56px;
+  --control-height: 32px;
+  --control-height-mobile: 36px;
+  --row-padding-y: 14px;
+  --card-padding: 16px;
+  --radius-default: 6px;
+  --radius-pill: 9999px;
+
+  /* ---- Elevation (Section 5) ---- */
+  --elevation-flat:    0 1px 2px rgba(0,0,0,0.05);
+  --elevation-raised:  0 4px 12px rgba(0,0,0,0.08);
+  --elevation-overlay: 0 12px 32px rgba(0,0,0,0.14);
+  --elevation-toast:   0 4px 16px rgba(0,0,0,0.12);
+
+  /* ---- Z-index (Section 5.1) ---- */
+  --z-header: 20;
+  --z-dropdown: 30;
+  --z-modal-backdrop: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+
+  /* ---- Motion (Section 6) ---- */
+  --duration-interaction: 150ms;
+  --duration-press: 120ms;
+  --duration-entrance: 320ms;
+  --easing-standard: ease;
+  --easing-entrance: cubic-bezier(0.16, 1, 0.3, 1);
+  --pulse-duration: 2s;
+}
+
+/* Respect reduced motion globally — Section 6, non-negotiable */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-interaction: 0.001ms;
+    --duration-press: 0.001ms;
+    --duration-entrance: 0.001ms;
+    --pulse-duration: 0.001ms;
+  }
+}
