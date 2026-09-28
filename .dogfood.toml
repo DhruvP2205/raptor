@@ -1,0 +1,19 @@
+# Raptor — tier claims and pitch.
+#
+# Updated only as each stage in docs/stages/ is actually implemented and
+# verified against the acceptance suite — never claimed ahead of what's
+# built. The brief's own scoring rubric rewards honest gap reporting over
+# inflated tier claims; this file is the receipt, not the ambition.
+
+name = "Raptor"
+pitch = "A self-hostable, open-source hackathon submission & judging platform — built backend-first so role isolation and deadlines are never optional."
+
+[tiers]
+# Flip an entry to true only once its stage doc is implemented AND the
+# acceptance suite passes for it. Currently: project scaffold only, no
+# stage implemented yet.
+t1_core = false
+t2_judging = false
+t3_public = false
+t4_stretch = false
+claimed = []

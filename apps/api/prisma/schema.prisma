@@ -1,0 +1,17 @@
+// The schema. docs/DATA-MODEL.md is the source of truth — this file
+// implements what that document says, module by module, in the order
+// docs/stages/ locks them. Models land here only as each stage doc is
+// actually implemented; nothing here should ever be ahead of a locked
+// stage doc. If this file and DATA-MODEL.md ever disagree, that's a bug
+// — see CLAUDE.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Module 1 (User, Session) models land here when auth implementation begins.
