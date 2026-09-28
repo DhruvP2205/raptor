@@ -3,7 +3,13 @@ import 'dotenv/config';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
-import { FixturesFile, importFixtures, issueSession } from './fixtures-import';
+import {
+  AuthHeaderRole,
+  issueOrReuseRoleSession,
+  readPreviousAuthHeaders,
+  writeAuthHeadersFile,
+} from './auth-header-bootstrap';
+import { FixturesFile, importFixtures } from './fixtures-import';
 
 // D171, docs/DECISIONS.md / docs/design/16-fixtures-import.md Section 2
 // — the seed entrypoint the design doc assumes already existed. Runs the
@@ -31,6 +37,10 @@ function defaultFixturesPath(): string {
   return join(__dirname, '../../prisma/fixtures.json');
 }
 
+function authHeadersFilePath(): string {
+  return join(__dirname, '../../.fixture-auth-headers.txt');
+}
+
 async function main(): Promise<number> {
   const fixturesPath = process.env.FIXTURES_PATH ?? defaultFixturesPath();
   if (!existsSync(fixturesPath)) {
@@ -48,24 +58,41 @@ async function main(): Promise<number> {
   try {
     const result = await importFixtures(prisma, fixtures);
 
-    const organizerToken = await issueSession(prisma, result.organizerUserId);
-    const judgeAToken = await issueSession(prisma, result.judgeUserIds[0]);
-    const judgeBToken = await issueSession(prisma, result.judgeUserIds[1]);
-    const participantToken = result.firstParticipantUserId
-      ? await issueSession(prisma, result.firstParticipantUserId)
-      : null;
+    // Module 17 (D169/D171, docs/design/17-auth-header-bootstrap.md) —
+    // reuses each role's previously-issued session (if still valid)
+    // rather than silently rotating a token a human already copied
+    // into .dogfood.toml. The file is the only place a raw token
+    // survives between runs — Session only ever stores its hash.
+    const headersFile = authHeadersFilePath();
+    const previousHeaders = readPreviousAuthHeaders(headersFile);
+    const roleUserIds: Record<AuthHeaderRole, string | null> = {
+      organizer: result.organizerUserId,
+      judge_a: result.judgeUserIds[0] ?? null,
+      judge_b: result.judgeUserIds[1] ?? null,
+      participant: result.firstParticipantUserId || null,
+    };
+
+    const sessionResults = await Promise.all(
+      (['organizer', 'judge_a', 'judge_b', 'participant'] as const).map(async (role) => {
+        const userId = roleUserIds[role];
+        if (!userId) return { role, headerValue: null, reused: false };
+        return issueOrReuseRoleSession(prisma, role, userId, previousHeaders);
+      }),
+    );
+
+    const headerByRole = Object.fromEntries(
+      sessionResults.map((r) => [r.role, r.headerValue ?? '<no user found in fixture for this role>']),
+    ) as Record<AuthHeaderRole, string>;
+    writeAuthHeadersFile(headersFile, headerByRole);
 
     console.log('\n=== Fixture import complete ===');
     console.log(`Event: ${result.eventSlug} (id=${result.eventId})`);
-    console.log('\n=== Seed-time auth headers (D169) — attach verbatim, checker never logs in ===');
-    console.log(`organizer:   Cookie: raptor_session=${organizerToken}`);
-    console.log(`judge_a:     Cookie: raptor_session=${judgeAToken}`);
-    console.log(`judge_b:     Cookie: raptor_session=${judgeBToken}`);
-    console.log(
-      participantToken
-        ? `participant: Cookie: raptor_session=${participantToken}`
-        : 'participant: <no team members found in fixture>',
-    );
+    console.log(`\n=== Seed-time auth headers (D169) — attach verbatim, checker never logs in ===`);
+    console.log(`(also written to ${headersFile})`);
+    for (const r of sessionResults) {
+      const suffix = r.headerValue ? (r.reused ? '  [reused from prior run]' : '  [freshly issued]') : '';
+      console.log(`${r.role}: ${r.headerValue ?? '<no user found in fixture for this role>'}${suffix}`);
+    }
     console.log('\n=== Route values for .dogfood.toml ===');
     console.log(`gallery       = /events/${result.eventId}/submissions`);
     console.log(`submit        = /submissions/${result.firstTeamSubmissionId}/submit`);

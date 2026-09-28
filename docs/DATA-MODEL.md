@@ -792,16 +792,31 @@ decided)
 
 - Event/Track/Prize descriptions are stored as markdown — directly
   exportable as plain text with no lossy HTML-to-text conversion needed.
-- CSV export at every pipeline stage is a stated brief requirement,
-  confirmed as one of exactly seven mechanically-checked behaviors at
-  T2 (D168), and now implemented: `GET /events/:eventId/export/
-  submissions.csv` (`apps/api/src/export/`), one row per
-  `everSubmitted: true` submission — `submissionId`, `title`,
-  `submissionType`, `team`/solo-user display name, `trackIds`,
-  `verificationDecision`, `completedReviews`, and a raw
-  (unnormalized) average score computed directly from `Score` rows,
-  deliberately independent of the results/normalization pipeline so
-  it returns real data at any point in an event's life.
+- **CSV export (Module 18, D170/D176)** — a stated brief requirement,
+  and `submissions.csv` specifically is one of exactly seven
+  mechanically-checked behaviors at T2 (D168). Two tiers
+  (`docs/design/18-csv-export.md`), `apps/api/src/export/`:
+  - **Organizer tier**, `GET /events/:eventId/export/*.csv`, scoped via
+    `EventRoleGuard`: `registrations`, `teams`, `judges` (assignment
+    load + platform-wide reliability notes), `submissions` (the
+    checker's target — real absences stay blank cells, no synthesized
+    placeholder), `scores` (raw average always available; `Rank`
+    blank until a `PublishedResultVersion` is `LIVE`), `normalization
+    -comparison` (full run history, dense-ranked raw vs. normalized
+    order per run — doubles as Normalization Proof bonus evidence),
+    `voting-results` (latest non-retracted version per round), and
+    `certificates` (one row per `Certificate`, not per person).
+  - **Admin tier**, `GET /admin/export/*.csv`, `siteAdmin`-only,
+    every call audited: `events` (cross-event, with computed
+    `EventPhase`), `global-ranking` (the current
+    `GlobalRankingSnapshot`), `audit-log` (date-range filterable —
+    `Target`/`Reason` are a best-effort read of `metadataJson`'s common
+    keys, since `AuditLog` has no structured columns for either), and
+    `users` (the full platform user directory).
+  - RFC 4180 encoding via `csv-stringify` (a real dependency, added for
+    this — the original single-export version hand-rolled its own
+    escaping, which the design doc explicitly rules out), streamed to
+    the response rather than buffered as one string.
 - Bulk import/export (T4) not yet designed.
 - **Module 16 (Fixtures Import, D167) — the acceptance-checker's
   `fixtures.json` importer.** Distinct from the general bulk-import
@@ -825,3 +840,10 @@ decided)
   `criterion` (keyed by the criterion's key string, e.g.
   `"functionality"`), `assignment` (keyed by
   `${judgeFixtureId}:${teamFixtureId}`).
+- **`auth-session` (Module 17, D175)** — one more `fixtureType`, keyed
+  by role name (`organizer`/`judge_a`/`judge_b`/`participant`) rather
+  than a fixture-file id, recording which `Session` row was issued for
+  each of the checker's four auth headers, so a re-run can confirm one
+  already exists and reuse it instead of rotating it out from under a
+  `.dogfood.toml` a human already filled in — see
+  `docs/design/17-auth-header-bootstrap.md` Section 4.

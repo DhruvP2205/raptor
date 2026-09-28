@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import { generateRawToken, sha256Hex } from '../common/crypto.util';
+import { generateRawToken } from '../common/crypto.util';
 import { normalizeEmail } from '../common/email.util';
 import { slugify } from '../common/slugify.util';
 
@@ -122,6 +122,26 @@ export function splitWeightsEvenly(count: number): number[] {
 // 0-100 (Score model comment) and must be a schema-legal Int.
 export function clampScoreValue(value: number): number {
   return Math.round(Math.min(100, Math.max(0, value)));
+}
+
+// Section 3 — "Any field Module 5 requires but the fixture omits...
+// gets a clearly-synthetic placeholder value, not left null." Pulled
+// out as its own pure function so the omitted-field path is directly
+// unit-testable — the real fixture always supplies title/summary/
+// repo_url for every one of its 41 projects, so this path is never
+// actually exercised by a live run against it (confirmed by inspection
+// of apps/api/prisma/fixtures.json); Section 6 still calls for a test
+// of it regardless.
+export function resolveSubmissionFields(project: FixtureProject): {
+  title: string;
+  description: string;
+  repoUrl: string;
+} {
+  return {
+    title: project.title,
+    description: project.summary ?? SYNTHESIZED_PLACEHOLDER,
+    repoUrl: project.repo_url ?? SYNTHESIZED_PLACEHOLDER,
+  };
 }
 
 // The fixture gives team members as bare email strings, no display name
@@ -295,25 +315,42 @@ export async function importFixtures(
   const teamNamesUsed = new Set<string>();
   let firstParticipantUserId = '';
   for (const t of fixtures.teams) {
-    const { internalId } = await getOrCreateRecord(prisma, 'team', t.id, async () => {
-      const memberIds: string[] = [];
-      for (const email of t.members) {
-        const normalized = normalizeEmail(email);
-        const user = await prisma.user.upsert({
-          where: { email: normalized },
-          create: {
-            email: normalized,
-            passwordHash: await randomPasswordHash(),
-            displayName: humanizeEmailLocalPart(normalized),
-            accountType: 'PARTICIPANT',
-            emailVerifiedAt: new Date(),
-          },
-          update: {},
-        });
-        memberIds.push(user.id);
-        if (!firstParticipantUserId) firstParticipantUserId = user.id;
-      }
+    // Member/registration upsert runs on EVERY seed run, not just the
+    // team's first import — both calls are themselves idempotent
+    // (upsert), and gating this inside the team-level
+    // getOrCreateRecord below would silently skip backfilling it for
+    // teams already imported before this fix existed. The real
+    // pipeline requires an EventMembership row to exist BEFORE a user
+    // can join/create a team (teams.service.ts's
+    // assertRegisteredParticipant) — a fixture-imported team member
+    // with no EventMembership row is a state the real pipeline could
+    // never produce. Surfaced by Module 18's Registrations export
+    // coming back empty against real fixture data; fixed here rather
+    // than worked around in the export itself.
+    const memberIds: string[] = [];
+    for (const email of t.members) {
+      const normalized = normalizeEmail(email);
+      const user = await prisma.user.upsert({
+        where: { email: normalized },
+        create: {
+          email: normalized,
+          passwordHash: await randomPasswordHash(),
+          displayName: humanizeEmailLocalPart(normalized),
+          accountType: 'PARTICIPANT',
+          emailVerifiedAt: new Date(),
+        },
+        update: {},
+      });
+      await prisma.eventMembership.upsert({
+        where: { userId_eventId: { userId: user.id, eventId: event.id } },
+        create: { userId: user.id, eventId: event.id, role: 'PARTICIPANT', invitationStatus: 'ACCEPTED' },
+        update: { invitationStatus: 'ACCEPTED' },
+      });
+      memberIds.push(user.id);
+      if (!firstParticipantUserId) firstParticipantUserId = user.id;
+    }
 
+    const { internalId } = await getOrCreateRecord(prisma, 'team', t.id, async () => {
       const finalName = disambiguateTeamName(t.name, teamNamesUsed);
       teamNamesUsed.add(finalName);
 
@@ -332,15 +369,6 @@ export async function importFixtures(
       return team.id;
     });
     teamInternalIdByFixtureId.set(t.id, internalId);
-    // Re-derived even on an already-imported team, so a re-run still
-    // knows the stable participant identity to print.
-    if (!firstParticipantUserId) {
-      const firstEmail = t.members[0];
-      if (firstEmail) {
-        const u = await prisma.user.findUnique({ where: { email: normalizeEmail(firstEmail) } });
-        if (u) firstParticipantUserId = u.id;
-      }
-    }
   }
 
   // --- Projects -> Submissions (Section 4b — collapse per team) ---
@@ -369,15 +397,16 @@ export async function importFixtures(
         const teamInternalId = teamInternalIdByFixtureId.get(teamFixtureId);
         if (!teamInternalId) throw new Error(`Unknown team fixture id in projects: ${teamFixtureId}`);
         const trackInternalId = kept.track ? trackInternalIdByFixtureId.get(kept.track) : undefined;
+        const fields = resolveSubmissionFields(kept);
 
         const submission = await prisma.submission.create({
           data: {
             eventId: event.id,
             submissionType: 'TEAM',
             teamId: teamInternalId,
-            title: kept.title,
-            description: kept.summary ?? SYNTHESIZED_PLACEHOLDER,
-            repoUrl: kept.repo_url ?? SYNTHESIZED_PLACEHOLDER,
+            title: fields.title,
+            description: fields.description,
+            repoUrl: fields.repoUrl,
             trackIds: trackInternalId ? [trackInternalId] : [],
             isDraft: false,
             everSubmitted: true,
@@ -516,11 +545,3 @@ export async function importFixtures(
   };
 }
 
-export async function issueSession(prisma: PrismaClient, userId: string): Promise<string> {
-  const rawToken = generateRawToken();
-  const tokenHash = sha256Hex(rawToken);
-  // Comfortably outlives the 72-hour build window (D166).
-  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-  await prisma.session.create({ data: { userId, tokenHash, expiresAt } });
-  return rawToken;
-}

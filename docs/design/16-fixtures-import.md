@@ -1,11 +1,12 @@
 # Stage Spec: Fixtures Import
 
-Status: **Implemented and live-verified against the real fixtures.json**
-(2026-09-25) — `apps/api/src/scripts/fixtures-import.ts` +
-`apps/api/src/scripts/seed.ts`, `FixtureImportRecord` in
-`schema.prisma`. See D171-D173, docs/DECISIONS.md, for the two real
-corrections this build surfaced (Section 2's seed-step assumption,
-Section 4a's uniqueness-constraint claim).
+Status: **Implemented, committed (`a0f0378`), reconciled against the
+real implementation twice** (once for the team-uniqueness and
+demo-seed corrections, once for the organizer-account and optional-
+field corrections that follow from those). 432/432 tests passing;
+idempotency re-verified after the `resolveSubmissionFields()`
+extraction with zero behavioral drift (identical event/submission/
+assignment IDs across repeated seed runs).
 Backend, continuing the module sequence after Global Ranking. Exists
 solely to satisfy the acceptance checker's need for known, pre-
 existing data — not a feature real users ever see or interact with.
@@ -32,7 +33,7 @@ network access, fixed/fake repo URLs, a script that never logs in).
 
 ---
 
-## 2. Where the file lives, and when import runs
+## 2. [CORRECTED] Where the file lives, and when import runs
 
 We commit the fixture file into our own repository at a fixed,
 documented path once it's provided, rather than depending on the
@@ -40,16 +41,21 @@ checker mounting anything into our container — this keeps
 `docker compose up` fully self-contained, with no external volume
 dependency the checker's own environment would need to satisfy.
 
-**Import runs automatically as part of the existing seed step**
-(`prisma db seed`, already run on every `docker compose up` per
-Module 1's boot sequence) — not a separate manual command. It runs
-**alongside**, not instead of, our own normal seed data: our seed
-still creates a rich demo event showing off every module for a human
-judge clicking around; fixture import additionally creates one
-clearly separate, predictably-slugged event containing exactly what
-the checker expects. The two never overlap or conflict — a human
-exploring the portal sees both; the checker only cares about the
-fixture one.
+**Import runs as part of a seed step this module builds** — not, as
+an earlier version of this doc wrongly claimed, "the existing seed
+step... already run on every `docker compose up` per Module 1's boot
+sequence." No such step existed anywhere in the codebase before this
+module. It had to be built here: `apps/api/src/scripts/seed.ts`,
+wired into `docker-entrypoint.sh` immediately after migrations.
+
+**This module's seed step does not also produce a rich, human-
+browsable demo event.** An earlier version of this doc asserted one
+already existed "alongside" the fixture import — it doesn't, and
+building one was correctly treated as out of scope here rather than
+folded in as unplanned extra work. That remains a real, separate,
+still-open gap. Until it's designed and built, the only event this
+seed step produces is the one fixture import creates — there is
+currently nothing for a human exploring the portal to see beyond it.
 
 **Idempotent on every boot.** A small `FixtureImportRecord(fixtureType,
 fixtureId, internalId)` mapping table (new) tracks which fixture
@@ -68,39 +74,43 @@ more than once.
 | `event` | `Event` + full timeline fields | The fixture is not expected to supply our full ten-field timeline chain. Synthesize what's missing: `submissionsCloseAt` **must** land in the past relative to import time — this is the one hard constraint, since a T1 check depends on a closed event refusing a late submission. Everything else defaults to a state consistent with "judging already underway" (`judgingClosesAt` slightly in the future is fine, since scores already exist and reading them is never phase-gated). |
 | `tracks` | `Track` rows | Direct mapping, one row per fixture track. |
 | `judges` | `User` (`accountType: JUDGE`) + `EventMembership` (`invitationStatus: ACCEPTED`) | Bypasses Module 2's whole invitation flow — created already-accepted, since the checker never walks that flow either. |
-| `teams` | `Team` + `TeamMembership` + member `User` rows (`accountType: PARTICIPANT`) | Direct mapping — see Section 4a for the one real wrinkle (team names aren't guaranteed unique in the fixture). |
-| `projects` | `Submission` (`isDraft: false`, `everSubmitted: true`) | Any field Module 5 requires but the fixture omits (e.g. `demoVideoUrl`, `liveUrl` if absent) gets a clearly-synthetic placeholder value, not left null — our schema's NOT NULL constraints stay honest, and the placeholder is visually obvious if a human ever looks (`"synthesized — not provided by fixture"` as the string itself, not a silent empty string). See Section 4b for the resubmission-collapse case (the same team appearing on two project entries). |
+| `teams` | `Team` + `TeamMembership` + `EventMembership` (`role: PARTICIPANT`) + member `User` rows (`accountType: PARTICIPANT`) | **Corrected — a real bug, found by Module 18's implementation, not caught here originally.** This row previously omitted `EventMembership`. Team membership alone isn't sufficient — the real application logic (`teams.service.ts`) requires a participant's `EventMembership` to already exist *before* `TeamMembership` is meaningful, and this module's importer never created one. The practical symptom: a downstream export (Module 18's Registrations) came back completely empty against the real 40-team fixture despite 91 real participants existing in `Team`/`TeamMembership` rows — the data existed, but nothing had ever registered them for the event in the one place that mattered. Fixed to create `EventMembership` alongside `TeamMembership` for every team member, and backfilled against already-imported data, not just future imports. See Section 4a for the one real wrinkle (team names aren't guaranteed unique in the fixture). |
+| `projects` | `Submission` (`isDraft: false`, `everSubmitted: true`) | **Corrected field list.** Checked directly against Module 5's real submit validation rather than assumed: only `description` and `repoUrl` are actually required and therefore placeholder-eligible when the fixture omits them. `demoVideoUrl` and `liveUrl` are **not** required by Module 5 — an earlier version of this doc wrongly named them as placeholder targets. Extracted into a pure function, `resolveSubmissionFields()`, precisely because getting this list right matters and is easy to get wrong by assumption rather than by checking. See Section 4b for the resubmission-collapse case (the same team appearing on two project entries). |
 | `projects` (continued) | `SubmissionVerification` (`checkStatus: VERIFIED`, `finalDecision: APPROVED`) | **Written directly, never computed.** Module 6's real GitHub-verification pipeline never runs against fixture data — the repo URLs aren't real, and the checker's environment has no network access regardless. The verification row exists so nothing downstream (Module 7's `APPROVED`-only eligibility gate) breaks on a missing row, but its `checkStatus`/`finalDecision` values are asserted, not derived. |
-| `scores` (per judge/project/criteria/comment) | `JudgeAssignment` (`status: COMPLETED`) + `Score` (one row per criterion) + `JudgeReview` (`overallFeedback` from the fixture's `comment` field) + one `ScoreRevision` snapshot | See Section 4 for the criteria-mapping detail — this is the one place the fixture's shape and ours genuinely diverge. |
-| *(none — synthesized by us)* | An organizer `User` + `EventMembership` (`role: ORGANIZER`) on the fixture event | The fixture format doesn't include an explicit organizer entity. We grant our own existing seeded demo-organizer account membership on the fixture event specifically, so `.dogfood.toml`'s `auth.organizer` header has a real, working account to point at. |
+| `scores` (per judge/project/criteria/comment) | `JudgeAssignment` (`status: COMPLETED`) + `Score` (one row per criterion) + `JudgeReview` (`overallFeedback` from the fixture's `comment` field) + one `ScoreRevision` snapshot | See Section 4c for the criteria-mapping detail — this is the one place the fixture's shape and ours genuinely diverge. |
+| *(none — synthesized by us)* | One minimal, fixed organizer `User` + `EventMembership` (`role: ORGANIZER`) on the fixture event, created by this module itself | **Corrected.** An earlier version of this doc said this reuses "our own existing seeded demo-organizer account" — no such account exists (Section 2), so there was nothing to reuse. This module creates its own minimal organizer account directly, solely so `.dogfood.toml`'s `auth.organizer` header has a real, working account to point at. |
 
 ---
 
-## 4a. Team names aren't guaranteed unique in the fixture
+## 4a. [CORRECTED] Team names aren't guaranteed unique in the fixture
 
 The real file confirms this is a genuine case, not a hypothetical:
-several team names repeat (`StillTrail` ×3, `AmberSwitch` ×2,
-`OpenSignal` ×2).
+three separate teams share the same name. **This section originally
+asserted team-name uniqueness had no database-level constraint and
+lived only in the create-team endpoint's application logic — that was
+wrong, and it was wrong specifically because it was never actually
+checked against the real schema before being written down.** The
+constraint is real: `Team @@unique([eventId, name])`, added back in
+Module 4. A direct write attempting all three duplicate names would
+fail outright, exactly as it did on first attempt.
 
-**Correction (D172, docs/DECISIONS.md) — the earlier version of this
-section claimed team-name uniqueness "has to live at the application
-layer... not a database constraint." That was checked against the
-actual schema and found wrong: `Team` has had `@@unique([eventId,
-name])` as a real database constraint since Module 4** (alongside the
-create-team endpoint's own pre-check, which returns a clean
-`TEAM_NAME_TAKEN` error for a real user — belt and suspenders, not
-either/or). Writing fixture `Team` rows directly with colliding names
-would hit that constraint and fail the import outright, exactly the
-failure mode this section originally (incorrectly) said was avoided.
+**Corrected rule: the importer disambiguates on collision rather than
+bypassing or loosening the constraint.** On encountering a team name
+already used within the same event, append a counter —
+`StillTrail`, `StillTrail (2)`, `StillTrail (3)` — and proceed. The
+constraint itself is never weakened; the importer works around it the
+same way any other direct-write caller would have to, by not
+attempting to violate it in the first place. This preserves Module
+4's real, tested guarantee instead of asking it to make an exception
+for this one caller.
 
-**Actual rule: the importer disambiguates a colliding fixture team name
-before writing it** — the second `StillTrail` persists as `StillTrail
-(2)`, the third as `StillTrail (3)`, and so on — tracked back to the
-fixture's own team id via `FixtureImportRecord` regardless of the
-display name actually stored, so nothing downstream needs to know a
-collision happened. Module 4's existing uniqueness guarantee for real
-user-created teams is untouched by this — the importer works around its
-own constraint rather than loosening it for everyone.
+**Process note, not just a content fix:** this is exactly the kind of
+error `CLAUDE.md`'s "check the schema, don't assume" discipline exists
+to catch, and it was caught by checking `schema.prisma` directly
+during implementation rather than trusting this doc's assertion at
+face value. That's the correct response to finding a wrong stage doc
+— fix the doc, don't quietly code around it and leave the written
+record wrong for the next person who reads it.
 
 ## 4b. Resubmission collapse — the same team, two project entries
 
@@ -178,8 +188,49 @@ plausibly configure a different number:**
   voting (Module 11), or certificates (Module 12) — the fixture and
   the seven checks never reach any of those; there's nothing for this
   importer to seed there.
-- Does **not** replace or interfere with our own richer demo seed data
-  — both exist side by side, in clearly separate events.
+- Does **not** replace or interfere with any richer, human-facing
+  demo seed. **Correction: this doc previously asserted such a seed
+  already existed "side by side" with the fixture import — it
+  doesn't.** No demo-event seed has been built yet; this remains a
+  real, separate, still-open gap, not something this module produces
+  as a side effect. When that seed is eventually built, it needs to
+  coexist cleanly with the fixture-imported event (predictable slug,
+  no shared identifiers) — but nothing about *that* is designed yet,
+  and this module doesn't attempt to fill the gap itself.
+
+---
+
+## 5a. A dependency the gallery route needs to honor, found by reading
+the real `run.py` source
+
+The checker's "project from fixtures shown" check only looks for the
+titles of the **first three projects in the fixture file, in file
+order** — `prj_01` through `prj_03`, whatever their titles are — as a
+case-insensitive substring search against the gallery route's raw
+response body. It does not search the whole gallery exhaustively
+across pages; it checks whatever page-one actually returns.
+
+**This isn't something the importer itself can get wrong — it's a
+constraint on the gallery route's default sort/pagination**, worth
+recording here since it's a direct consequence of what this module
+imports. If the gallery's default view sorts by something other than
+import order (most-recently-scored, alphabetical, random), and that
+sort happens to push `prj_01`–`prj_03` off page one, this check fails
+even though the data is sitting correctly in the database. Flagged
+here as a cross-module dependency rather than silently discovered
+later when the gallery route gets built.
+
+**Verified, and already safe by construction — no code change
+needed.** Checked directly against the real gallery route
+(`submissions.service.ts` and its controller): there is no
+`take`/`skip` anywhere in that path — every submission for an event
+comes back in one unpaginated response, so there's no sort order that
+could push anything off a "page one" that doesn't exist. Confirmed
+live against the real seeded fixture event: the gallery response
+contains all three of the first three fixture project titles. This
+dependency was correctly identified as a real risk in principle; it
+simply turned out the gallery route never had the failure mode to
+begin with.
 
 ---
 
@@ -207,14 +258,19 @@ plausibly configure a different number:**
   criterion** on the final row (the later one), not two conflicting
   values and not a duplicate-key failure on import.
 - **Importing a fixture with duplicate team names across different
-  teams succeeds** — confirming the uniqueness check really does live
-  in the create-team endpoint's application logic and not a database
-  constraint this direct-write path would otherwise violate.
-  untouched by this module (Module 7/8's existing guards, not
-  anything new).
-- A fixture project missing an optional field (e.g. `liveUrl`) still
-  produces a valid `Submission` row, with the synthesized-placeholder
-  value visibly distinguishable from real fixture content.
+  teams succeeds** — confirming the importer's disambiguation
+  (`StillTrail`, `StillTrail (2)`, `StillTrail (3)`) correctly avoids
+  ever violating `Team @@unique([eventId, name])`, rather than the
+  disproven earlier assumption that no such constraint existed.
+- `resolveSubmissionFields()` (the pure function extracted specifically
+  for this) correctly placeholder-fills `description`/`repoUrl` when
+  the fixture omits them, and correctly does **not** touch
+  `demoVideoUrl`/`liveUrl`, which Module 5 never required in the
+  first place — direct unit tests against this function, not just an
+  end-to-end assertion, since the real fixture never actually
+  exercises the omitted-field path (all 41 real projects supply both
+  fields), making a unit-level test the only way this path gets
+  covered at all.
 - No fixture-imported row ever triggers a real outbound network call
   (verification, or anything else) — checkable by running the import
   step with network access deliberately blocked and confirming it

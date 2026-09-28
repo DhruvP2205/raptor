@@ -24,3 +24,10 @@ Thumbs.db
 # relative to apps/api when unset; actual stored files are runtime
 # data, never source.
 apps/api/uploads/
+
+# Module 17 (Seed-Time Auth-Header Bootstrap) — local convenience copy
+# of the four checker auth headers seed.ts prints; the only place a raw
+# session token is ever persisted outside the process (Session stores
+# only its hash), so it has to exist somewhere for a re-run to reprint
+# the same value, but it's never committed.
+apps/api/.fixture-auth-headers.txt

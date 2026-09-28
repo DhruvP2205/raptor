@@ -1,9 +1,11 @@
 import {
+  SYNTHESIZED_PLACEHOLDER,
   clampScoreValue,
   dedupScoresForTeam,
   disambiguateTeamName,
   humanizeEmailLocalPart,
   pickKeptProject,
+  resolveSubmissionFields,
   splitWeightsEvenly,
   FixtureProject,
   FixtureScore,
@@ -140,6 +142,58 @@ describe('clampScoreValue', () => {
 
   it('rounds a non-integer to satisfy the Int column', () => {
     expect(clampScoreValue(3.7)).toBe(4);
+  });
+});
+
+describe('resolveSubmissionFields', () => {
+  // Section 3/6 — a real fixture project always has title/summary/
+  // repo_url (confirmed: 0 of the real file's 41 projects omit
+  // summary), so this path is never exercised by a live run. Doc
+  // Section 6 still requires it be tested.
+  it('passes through title/summary/repo_url unchanged when all present', () => {
+    const project: FixtureProject = {
+      id: 'p1',
+      team: 't1',
+      title: 'Real Title',
+      summary: 'Real summary.',
+      repo_url: 'https://example.org/repo/1',
+      submitted_at: '2026-01-01T00:00:00Z',
+    };
+    expect(resolveSubmissionFields(project)).toEqual({
+      title: 'Real Title',
+      description: 'Real summary.',
+      repoUrl: 'https://example.org/repo/1',
+    });
+  });
+
+  it('substitutes the synthesized placeholder for a missing summary, not null/empty', () => {
+    const project: FixtureProject = {
+      id: 'p2',
+      team: 't1',
+      title: 'Real Title',
+      submitted_at: '2026-01-01T00:00:00Z',
+    };
+    const fields = resolveSubmissionFields(project);
+    expect(fields.description).toBe(SYNTHESIZED_PLACEHOLDER);
+  });
+
+  it('substitutes the synthesized placeholder for a missing repo_url, not null/empty', () => {
+    const project: FixtureProject = {
+      id: 'p3',
+      team: 't1',
+      title: 'Real Title',
+      summary: 'Real summary.',
+      submitted_at: '2026-01-01T00:00:00Z',
+    };
+    const fields = resolveSubmissionFields(project);
+    expect(fields.repoUrl).toBe(SYNTHESIZED_PLACEHOLDER);
+  });
+
+  it('the placeholder is visually distinguishable from real content', () => {
+    const project: FixtureProject = { id: 'p4', team: 't1', title: 'T', submitted_at: '2026-01-01T00:00:00Z' };
+    const fields = resolveSubmissionFields(project);
+    expect(fields.description).toContain('synthesized');
+    expect(fields.description).not.toBe('');
   });
 });
 

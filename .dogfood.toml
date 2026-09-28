@@ -57,26 +57,31 @@ peer_scores  = "/assignments/09d41474-35a9-4147-94e6-5cebc5917167"
 csv_export   = "/events/39bc0dac-0499-4969-b539-81d3bff3a755/export/submissions.csv"
 
 [checker.auth_headers]
-# Seed-time bootstrap (D169) — the checker never logs in. Paste the four
-# `Cookie: raptor_session=...` lines printed by seed.ts here verbatim before
-# running run.py. Left blank in version control on purpose: these are live
-# Session rows tied to whichever seed run last executed, not a secret meant
-# to be committed and reused.
+# Seed-time bootstrap (D169, hardened D175/Module 17) — the checker never
+# logs in. Paste the four `Cookie: raptor_session=...` lines here verbatim,
+# sourced from apps/api/.fixture-auth-headers.txt (gitignored — also printed
+# to stdout on boot) rather than re-running anything by hand. Left blank in
+# version control on purpose: these are live Session rows, not a secret
+# meant to be committed. Re-running the seed step reuses the same four
+# values rather than rotating them (D175) — filling this in once and
+# restarting the container repeatedly does NOT require re-copying.
 organizer   = ""
 judge_a     = ""
 judge_b     = ""
 participant = ""
 
 [checker.regenerate]
-# Procedure (D167/D169/D171) — as of Module 16, this now happens
+# Procedure (D167/D169/D171/D175) — as of Module 16/17, this now happens
 # AUTOMATICALLY on every `docker compose up` (docker-entrypoint.sh runs
 # `node dist/scripts/seed.js` right after migrations, reading the committed
-# apps/api/prisma/fixtures.json). Only needed manually for local dev or to
-# force a fresh set of session tokens:
+# apps/api/prisma/fixtures.json). Only needed manually for local dev, or to
+# read the current values without re-running anything (they're stable
+# across restarts):
 #   1. pnpm --filter @raptor/api build
 #   2. node apps/api/dist/scripts/seed.js
-#   3. Copy the script's "Route values" block into [checker.routes] above
-#      and its four "Cookie: ..." lines into [checker.auth_headers] above.
+#   3. Copy the script's "Route values" block into [checker.routes] above,
+#      and apps/api/.fixture-auth-headers.txt's four lines into
+#      [checker.auth_headers] above (same file the script just wrote/reused).
 # If the organizers ever supply a *different* fixtures.json than the one
 # already committed, replace apps/api/prisma/fixtures.json with it (or set
 # FIXTURES_PATH) before step 2 — the importer's field mapping (docs/design/

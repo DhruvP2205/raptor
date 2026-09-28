@@ -1962,3 +1962,169 @@ checks (gallery load + contents, late-submission rejection,
 judge-own-scores, peer-scores-refused, participant-refused-judge-scores,
 organizer CSV export) passed against a live-booted API using the
 seed-printed session cookies.
+
+**D174 — Post-commit reconciliation pass against a hand-edited revision
+of `docs/design/16-fixtures-import.md`.** The user independently
+corrected Section 4a (arriving at the same conclusion as D172, in their
+own words) and added a Section 5 correction stating no rich demo-event
+seed exists — but three other spots in the doc still disagreed with
+that Section 5 correction and with the already-shipped code:
+- **Section 2** still claimed the seed step and a "rich demo event...
+  for a human judge" both already existed per Module 1's boot sequence.
+  Neither did before this module (D171) — fixed to say so plainly
+  instead of contradicting Section 5 two sections later.
+- **Section 3's organizer row** still said "our own existing seeded
+  demo-organizer account," when Module 16 creates one minimal,
+  fixed-identity account itself (`demo.organizer@raptor.local`) — fixed.
+- **Section 3's `projects` row** named `demoVideoUrl`/`liveUrl` as
+  examples of fields that get a synthesized placeholder. Checked
+  against Module 5's actual `submit()` validation
+  (`submissions.service.ts`): neither is required, so both stay
+  genuinely `null` when absent (which the fixture always is) — the
+  placeholder only ever applies to `description`/`repoUrl`. Fixed the
+  example to match what the code (correctly) does.
+- **Section 6** still asserted the disproven "uniqueness lives at the
+  application layer, not a database constraint" reasoning for why
+  duplicate team names import successfully, plus a dangling
+  copy-pasted sentence fragment left over from an earlier edit — both
+  fixed.
+
+**Real test gap this pass surfaced:** Section 6 requires testing "a
+fixture project missing an optional field... produces a valid
+`Submission` row with the synthesized-placeholder value" — never
+actually exercised, because none of the real file's 41 projects omit
+`summary`/`repo_url`. Extracted the field-resolution logic into its own
+pure function (`resolveSubmissionFields`, `fixtures-import.ts`) and
+added direct unit tests for the omitted-field case (4 new tests, 432
+total in `apps/api`). Re-ran the seed script against the real fixture a
+third time after this refactor — identical event/submission/assignment
+IDs, confirming the extraction changed nothing behaviorally.
+
+---
+
+## Module 17 (Seed-Time Auth-Header Bootstrap) — built against docs/design/17-auth-header-bootstrap.md
+
+**D175 — Implemented the role-keyed idempotent session reuse Section 4
+requires, which Module 16's original `seed.ts` didn't have** (it issued
+a brand-new `Session` for all four roles on every single boot). Since
+`Session` only ever stores a token's hash, never the raw value, the raw
+token can't be recovered from the database on a later run — the doc's
+own Section 3 file requirement (`apps/api/.fixture-auth-headers.txt`,
+gitignored) turns out to be load-bearing for this, not just a
+convenience: it's the only place a previously-issued raw token survives
+between runs. Implementation (`apps/api/src/scripts/
+auth-header-bootstrap.ts`): a `FixtureImportRecord` row per role
+(`fixtureType: "auth-session"`, `fixtureId` = role name) records which
+`Session` id was issued for it; a re-run checks that session is still
+present and unexpired, and if so, reads the matching line back out of
+the file and reprints the identical value instead of issuing a new one.
+
+**Live-verified, not just unit-tested:** ran the seed script twice in a
+row — first run issued four fresh sessions (`[freshly issued]`), second
+run reprinted byte-identical header values for all four roles
+(`[reused from prior run]`), confirmed zero session-row growth for the
+reused run. Re-booted the API and re-ran all six of the T1/T2 checks
+(gallery, late-submission rejection, judge-own-scores, peer-scores
+-refused, participant-refused-judge-scores, CSV export) against the
+*reused* tokens specifically — not just the fresh ones from the last
+verification pass — confirming a reused credential is a fully working
+one, not a stale echo. 8 new unit tests (440 total in `apps/api`)
+cover the header-line format (Section 2's "complete line, not a bare
+token" requirement, confirmed against the real `run.py` source) and the
+raw-`#`-character guard (Section 6) — confirmed directly rather than
+assumed, since `generateRawToken()`'s hex alphabet can't produce one.
+
+---
+
+## Module 18 (CSV Export) — built against docs/design/18-csv-export.md
+
+**D176 — Replaced the original single-export CSV module (D170) with
+the full two-tier design: 8 organizer-tier exports
+(`apps/api/src/export/export.{service,controller}.ts`) and 4
+admin-tier exports (`admin-export.{service,controller}.ts`,
+`siteAdmin`-only via the existing `SiteAdminGuard`, every call
+audited).** Added `csv-stringify` as a real dependency — the doc
+explicitly calls out "never hand-rolled string joining," which is
+exactly what the original `csvEscape()` was; replaced with RFC
+4180-compliant encoding streamed to the response rather than built as
+one buffered string first.
+
+**Two factual corrections made to the doc during implementation, both
+checked directly against `schema.prisma`/`audit.service.ts` rather than
+assumed (same discipline D172 established for Module 16):**
+- **Section 4's "Admin Name/Email" column** named a nonexistent
+  `TeamMembership.isAdmin` field. The real source is `Team.adminUserId`
+  (already Module 4's fixed, non-transferable team-admin pointer).
+- **Section 13's Target/Reason columns** implied `AuditLog` has
+  structured columns for them. It doesn't — only `actorUserId`/
+  `action`/`metadataJson` exist (`audit.service.ts`), and
+  `metadataJson`'s shape varies per action across roughly 30 call
+  sites. Implemented as a best-effort extraction over a fixed set of
+  common id-like keys and reason-like keys, flagged in both the doc and
+  code as an inference, not a guaranteed-accurate structured read.
+
+**Real Module 16 gap this build surfaced, fixed additively (same
+"export work surfaces backend gaps" pattern already established for
+the frontend build):** the Registrations export came back empty
+against the real fixture-imported event, despite 91 real participants
+existing. Root cause — `teams.service.ts`'s `assertRegisteredParticipant`
+requires an `EventMembership(role: PARTICIPANT, invitationStatus:
+ACCEPTED)` row to exist before a user can join or create a team, in the
+real user-driven pipeline. Module 16's fixture importer created
+`User`/`TeamMembership` rows for team members directly but never this
+one — a state the real pipeline could never produce, since it's
+enforced as a precondition, not a side effect, of team membership.
+Fixed by upserting the missing `EventMembership` row for every fixture
+team member; restructured so this runs on every seed execution (not
+gated behind the team's own one-time creation check), since existing
+already-imported fixture data needed the same backfill a fresh import
+would now get automatically. Re-ran the seed step against the real
+40-team fixture after the fix — Registrations export went from 0 rows
+to 91, one per real team member, with correct team-name resolution.
+
+**Live-verified against the real fixture-imported event and a real
+`siteAdmin` account:** all 8 organizer-tier exports return 200 with
+real CSV bodies; a judge and a participant are both refused (403) on
+an organizer-tier export; an event's own organizer is refused (403) on
+an admin-tier export; all 4 admin-tier exports return 200 for a real
+`siteAdmin`, including cross-event data (the "All events" export
+correctly showed multiple unrelated events from earlier sessions'
+leftover test data, each with its own independently-computed
+`EventPhase`). 17 new unit tests (457 total in `apps/api`) cover Rank
+gating (blank pre-publish, populated once `LIVE`), per-run dense
+ranking in the Normalization Comparison export, the Voting Results
+export's per-round latest-version selection and `Won` mapping
+(confirmed `VotingResultEntry.isSharedWin` is already true for a lone
+clear winner, not only a tie — `VotingService.computeTally`'s own
+`maxCount > 0 && voteCount === maxCount`), and the `AuditLog`
+Target/Reason heuristic.
+
+---
+
+## Post-build reconciliation — Modules 16 and 18, hand-edited doc revisions
+
+**D177 — `docs/design/16-fixtures-import.md` Section 5a: a real,
+previously-unflagged dependency confirmed against the actual `run.py`
+source.** The checker's "gallery shows a fixture project" check scans
+only page-one of the gallery's raw response for the first three
+fixture projects' titles (`prj_01`-`prj_03`, file order), not the whole
+gallery. Checked directly rather than assumed: `SubmissionsService`'s
+gallery query (`submissions.service.ts`) has no `take`/`skip` and the
+controller adds none either — every submission is always returned in
+one unpaginated response, so nothing can ever push these three titles
+off "page one." Confirmed live against the real fixture: the gallery
+response for the 40-team seeded event contains all three real titles
+("Glass Signal", "Small Meadow", "Deep Compass"). No code change
+needed — this was a real risk worth checking, not a real bug.
+
+**D178 — `docs/design/18-csv-export.md` Section 13, corrected a second
+time: empty Target/Reason cells must show a literal `"(unavailable)"`,
+not a blank string.** A blank cell is indistinguishable from "nothing
+happened here"; `metadataJson`'s shape isn't guaranteed to carry either
+concept for every action type, so the absence needs to be visible, not
+silent. Fixed in `describeAuditTarget`/`describeAuditReason`
+(`admin-export.service.ts`) and their unit tests. Live-verified against
+the real audit log: entries with no recognizable metadata key (e.g.
+`STAFF_ACCOUNT_CREATED`, `GITHUB_TOKEN_ADDED`) now show
+`(unavailable)` in both columns; entries with a resolvable target
+(e.g. `SUBMISSION_SUBMITTED`) still resolve correctly.

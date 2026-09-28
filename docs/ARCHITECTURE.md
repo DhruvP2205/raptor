@@ -299,17 +299,25 @@ New as of the official spec review (D166–D170) — `dogfoodhack.com/
 spec/` defines a narrow, fully mechanical checking layer distinct from
 (and much smaller than) the fourteen-plus modules already built. Three
 concrete integration points this system needs — all three now built
-(Module 16, D171-D173):
+(Modules 16-17, D171-D175):
 
-1. **Seed-time header printing (D169) — implemented.**
-   `apps/api/src/scripts/seed.ts`, invoked directly from
-   `docker-entrypoint.sh` right after `prisma migrate deploy` (every
-   boot, not a separate manual step). No general seed step existed
-   before this module despite this section previously assuming one
-   did — see D171. Prints the four `organizer`/`judge_a`/`judge_b`/
-   `participant` `Cookie: raptor_session=...` headers to stdout on
-   every boot; entirely separate from Module 1's real session system,
-   which the checker never calls.
+1. **Seed-time header printing (D169) — implemented, then hardened
+   (Module 17, D175).** `apps/api/src/scripts/seed.ts` +
+   `apps/api/src/scripts/auth-header-bootstrap.ts`, invoked directly
+   from `docker-entrypoint.sh` right after `prisma migrate deploy`
+   (every boot, not a separate manual step). No general seed step
+   existed before Module 16 despite this section previously assuming
+   one did — see D171. Prints the four `organizer`/`judge_a`/
+   `judge_b`/`participant` `Cookie: raptor_session=...` headers to
+   stdout **and** to a local gitignored file
+   (`apps/api/.fixture-auth-headers.txt`) on every boot; entirely
+   separate from Module 1's real session system, which the checker
+   never calls. **Idempotent per role, not just per fixture entity**
+   (D175): a re-run reuses each role's still-valid session and
+   reprints the identical header value rather than rotating it out
+   from under a `.dogfood.toml` a human already filled in — the file
+   is the only place a raw token survives between runs, since
+   `Session` stores only its hash.
 2. **The fixtures import path (D167) — implemented.**
    `apps/api/src/scripts/fixtures-import.ts`, called from `seed.ts`.
    A direct-write loader, not a route real users ever call, that
