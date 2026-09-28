@@ -14,4 +14,54 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Module 1 (User, Session) models land here when auth implementation begins.
+// Module 1 (Auth & Email) — see docs/stages/01-auth-and-email-setup.md.
+//
+// Fields beyond this stage's scope — accountType, siteAdmin,
+// mustResetPassword — arrive with Module 2
+// (docs/stages/02-roles-and-membership.md Section 5). Do not add them
+// here ahead of that stage being implemented.
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  passwordHash String
+  displayName  String
+
+  emailVerifiedAt DateTime?
+
+  // Single outstanding email-verification token, hashed (see D54,
+  // docs/DECISIONS.md) — not cleared on successful verification.
+  // emailVerifiedAt is what gates single-use behavior; keeping the hash
+  // around lets a repeat hit on the same verify link resolve to this
+  // user and be recognized as an idempotent no-op instead of "invalid
+  // token". Overwritten (invalidating the previous token) on signup
+  // and on every resend.
+  verificationTokenHash      String?   @unique
+  verificationTokenExpiresAt DateTime?
+
+  // bannedByUserId (audit: who issued the ban) is deferred — no
+  // ban-issuing endpoint exists yet; these two fields only support the
+  // signup-time rejection check this stage's doc requires.
+  bannedAt     DateTime?
+  bannedReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+}
+
+model Session {
+  id        String  @id @default(uuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String  @unique
+
+  userAgent String?
+  ipHash    String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}

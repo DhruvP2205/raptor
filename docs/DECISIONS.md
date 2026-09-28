@@ -404,3 +404,71 @@ hardening measure, not just organizational tidiness.
 **D53 — A `Makefile`/root npm-scripts wrapper around common commands
 (`up`, `seed`, `test`, `acceptance`) — proposed, not yet confirmed by the
 user; revisit before scaffolding tooling.**
+
+---
+
+## Auth & Email implementation (Module 1, filled in during build)
+
+**D54 — Email verification token is stored as two nullable columns
+directly on `User` (`verificationTokenHash`, `verificationTokenExpiresAt`),
+not a separate table.**
+Context: Module 1's stage doc says the token must be "stored hashed,
+never stored raw" but doesn't specify a table shape, and neither does
+`DATA-MODEL.md`. Two existing patterns already exist in this project:
+`Session` is a separate table (because a user legitimately has many
+concurrent sessions), while judge-invitation tokens live as columns
+directly on `EventMembership` (because there's at most one outstanding
+invitation per membership at a time). Email verification matches the
+second case — a user has at most one outstanding verification token —
+so columns-on-`User` was chosen over inventing a new table pattern.
+**Not cleared on successful verification.** `emailVerifiedAt` is what
+gates single-use/idempotent-replay behavior (Section 3 of the stage
+doc: "hitting an already-verified account's link again is idempotent").
+Clearing the hash on success would break that — a repeat hit on the
+same link would find no matching user at all (hash is null) and return
+"invalid token" instead of the required idempotent no-op. Overwritten
+(invalidating the previous token) on signup and on every resend, same
+invalidate-old-issue-new pattern used everywhere else in this project.
+
+**D55 — `bannedByUserId` (audit: who issued a ban) is deferred from
+`User`, even though `DATA-MODEL.md`'s narrative lists it.**
+Context: no ban-issuing endpoint exists in any locked stage doc yet
+(only Module 1's signup-time rejection check, which only needs
+`bannedAt`/`bannedReason`). Adding an audit column with no code path
+that ever sets it is speculative; it arrives with whichever future
+module actually designs the ban-issuing action (see D47/D48 in the
+voting section above, the only place admin bans are discussed so far).
+
+**Open, flagged back rather than decided — whether a banned account can
+still log in.** The stage doc only specifies blocking *signup* with a
+banned email; it's silent on whether an existing banned account can
+still authenticate. Implemented as: login is also blocked for banned
+accounts (`ACCOUNT_BANNED`), on the reasoning that allowing full login
+while only blocking fresh signups would be an inconsistent half
+-enforcement. This is a judgment call, not a confirmed decision — revisit
+if the eventual ban-issuing module wants different behavior (e.g. a
+distinct "account banned, here's why" page instead of an opaque 403).
+
+**D56 — Pending migrations are applied automatically on every container
+boot (`prisma migrate deploy`, run from a shell entrypoint before the
+Node process starts), and the Postgres-password secret is read by that
+shell entrypoint rather than by the TypeScript app.**
+Context: `docker compose up` is required to produce a fully working,
+seeded instance with zero manual steps (CLAUDE.md's no-hosted-dependency
+principle; the brief's Adoptability scoring). Without auto-migration, a
+fresh deployment's tables would simply not exist until someone ran a CLI
+command by hand. `prisma migrate deploy` is a separate OS process from
+the Node app, so it needs its own `DATABASE_URL` before the app has had
+any chance to construct one in TypeScript — a shell entrypoint
+(`apps/api/docker-entrypoint.sh`) that builds `DATABASE_URL` once and
+exports it before running *both* the migration step and `exec node
+dist/main.js` is the only way to guarantee both processes agree on the
+same connection string, rather than two copies of the same
+URL-construction formula (one in shell, one in TypeScript) silently
+drifting apart. `prisma` moved from a devDependency to a runtime
+dependency in `apps/api/package.json` as a consequence — the CLI has to
+actually be present in the production image to run this.
+Rejected: constructing `DATABASE_URL` in TypeScript only (as originally
+written into `ARCHITECTURE.md` §5 before this module's implementation) —
+works fine for the app process itself, but leaves the separate `prisma
+migrate deploy` step with no connection string of its own.

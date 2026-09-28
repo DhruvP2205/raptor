@@ -5,10 +5,13 @@
 #
 # NOTE: unverified against a real `docker build` as of this commit — this
 # environment doesn't have Docker installed. Re-check once Docker is
-# available, and expect adjustments once stage 1 adds native deps
-# (e.g. argon2, which needs node-gyp build tooling in the deps stage).
+# available.
 
 FROM node:22-alpine AS base
+# argon2 needs node-gyp build tooling if no prebuilt binary exists for
+# this platform/libc combo (musl, in this case); Prisma's query engine
+# needs openssl at both build and run time on Alpine.
+RUN apk add --no-cache python3 make g++ openssl
 RUN corepack enable
 WORKDIR /repo
 
@@ -24,13 +27,22 @@ COPY tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/api apps/api
 RUN pnpm --filter @raptor/shared build
+RUN pnpm --filter @raptor/api exec prisma generate
 RUN pnpm --filter @raptor/api build
 RUN pnpm deploy --filter @raptor/api --prod /repo/out/api
+# Re-generate explicitly against the deployed copy's schema, rather than
+# trusting @prisma/client's own postinstall auto-detection to find it in
+# this fresh node_modules — avoids a silent mismatch if that detection
+# doesn't see the copied prisma/ folder during pnpm deploy's own install.
+RUN cd /repo/out/api && ./node_modules/.bin/prisma generate --schema=./prisma/schema.prisma
 
 FROM node:22-alpine AS runtime
+RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /repo/out/api ./
 COPY --from=build /repo/apps/api/prisma ./prisma
+COPY apps/api/docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 EXPOSE 4000
-CMD ["node", "dist/main.js"]
+ENTRYPOINT ["./docker-entrypoint.sh"]

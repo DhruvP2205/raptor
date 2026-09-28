@@ -122,11 +122,24 @@ services:
       - smtp_credentials
 ```
 
-The app reads `/run/secrets/<name>` at startup. This value never appears
-in `docker inspect`, shell history, or the compose file itself. A
-self-hoster edits one file per secret; no code change required.
-`secrets/*.example` files are committed as templates with placeholder
-values and inline comments.
+This value never appears in `docker inspect`, shell history, or the
+compose file itself. A self-hoster edits one file per secret; no code
+change required. `secrets/*.txt.example` files are committed as
+templates with placeholder values and inline comments.
+
+**Who reads `/run/secrets/<name>`, exactly, depends on the secret (D56):**
+
+- **SMTP credentials** are read by the Node app itself, in TypeScript
+  (`apps/api/src/config/load-secrets.ts`), since only that one process
+  ever needs them.
+- **The Postgres password** is read by `apps/api/docker-entrypoint.sh`
+  (shell), not TypeScript, and used to construct `DATABASE_URL` before
+  *either* of two separate OS processes that need it starts: `prisma
+  migrate deploy` (applying pending migrations on every boot, so `docker
+  compose up` needs zero manual steps — see D56) and then the Node app
+  itself (`exec node dist/main.js`, inheriting the exported env var).
+  Constructing the URL in only one place, before both processes start,
+  avoids them silently drifting onto different connection strings.
 
 ---
 

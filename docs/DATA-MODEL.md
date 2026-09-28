@@ -3,17 +3,20 @@
 The schema, table by table, and why each field exists. This is the
 human-readable narrative version of `apps/api/prisma/schema.prisma`.
 
-**Status note:** the schema described below reflects every decision
-locked through Module 5 (Submission Management) plus the account-model
-changes from Module 2. The `schema.prisma` file currently in the repo
-predates several of these decisions (it still has thumbnail/image
-fields, tech tags, a two-role-per-account model, etc. from an earlier
-draft) and **must be rewritten to match this document before
-implementation starts** — this document is authoritative; the Prisma
-file is not yet caught up to it. Certificates and voting are discussed
-extensively in `DECISIONS.md` but don't have a finalized stage doc yet,
-so their tables are sketched here as forward-looking and may still
-shift.
+**Status note:** the schema described below is the cumulative target —
+every decision locked through Module 5 (Submission Management) plus the
+account-model changes from Module 2. `apps/api/prisma/schema.prisma` is
+built up **incrementally, stage by stage**, matching each stage doc's own
+declared scope — it is intentionally behind this document until every
+module below it has actually been implemented (e.g. `User.accountType`,
+`siteAdmin`, and `mustResetPassword` belong to Module 2 and won't exist
+in the Prisma schema until that module is built, even though they're
+documented here as part of the eventual `User` table). If the live
+schema and a field documented here disagree **and the owning module has
+already been implemented**, that's a bug. Certificates and voting are
+discussed extensively in `DECISIONS.md` but don't have a finalized stage
+doc yet, so their tables are sketched here as forward-looking and may
+still shift.
 
 ---
 
@@ -31,7 +34,9 @@ shift.
 | `siteAdmin` | boolean | Orthogonal flag, separate from `accountType` |
 | `mustResetPassword` | boolean | True for admin-created staff accounts until first password change |
 | `emailVerifiedAt` | datetime, nullable | Only meaningful/required for `PARTICIPANT` accounts; drives voting eligibility later |
-| `bannedAt` / `bannedReason` / `bannedByUserId` | nullable | Banning is by account, but signup also checks banned *emails* so a ban blocks re-registration too |
+| `verificationTokenHash` / `verificationTokenExpiresAt` | string unique, nullable / datetime, nullable | Module 1. Hashed, never raw (D54). **Not cleared on successful verification** — `emailVerifiedAt` alone gates single-use/idempotent-replay behavior; overwritten (invalidating the previous token) on signup and on every resend. |
+| `bannedAt` / `bannedReason` | nullable | Module 1. Checked at signup to reject a banned email outright. |
+| `bannedByUserId` | nullable | **Deferred (D55)** — not yet in the Prisma schema; no ban-issuing endpoint exists in any locked stage doc yet, only the signup-time check above, which doesn't need it. Arrives with whichever module designs the actual ban action. |
 | `createdAt`, `updatedAt` | datetime | `createdAt` is the account-age gate input for voting eligibility (D44) |
 
 **Why `accountType` lives directly on `User` rather than being inferred

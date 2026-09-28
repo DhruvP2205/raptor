@@ -60,6 +60,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       REDIS_URL: redis://redis:6379
+      PUBLIC_WEB_URL: http://localhost:3000
       # TEST_MODE is intentionally absent here — absence = false.
       # Never set it in this file. See
       # docs/stages/01-auth-and-email-setup.md Section 5.5.

@@ -1,14 +1,21 @@
 import { existsSync, readFileSync } from 'fs';
 
-// Reads Docker Compose secrets (mounted at /run/secrets/<name>, per
-// docs/ARCHITECTURE.md Section 5) into process.env at process startup,
-// before any other module — notably before Prisma Client is
-// instantiated — can read them. Must be called as the first statement
-// in main.ts, ahead of any import with a module-instantiation side
-// effect.
+// Reads the SMTP-credentials Docker Compose secret (mounted at
+// /run/secrets/smtp_credentials, per docs/ARCHITECTURE.md Section 5)
+// into process.env at process startup, before any other module can read
+// it. Must be called as the first statement in main.ts.
 //
-// Never enabled/required in non-Docker local dev: if the secret files
-// aren't present (e.g. DATABASE_URL is already set directly in .env),
+// DATABASE_URL is deliberately NOT handled here. It's needed by two
+// separate OS processes in the runtime container — the `prisma migrate
+// deploy` step and this Node app — and only one of them can run this
+// TypeScript module, so docker-entrypoint.sh is the single place that
+// constructs it from the same secret, before either process starts.
+// Keeping one formula in one place (the shell script) avoids the two
+// processes silently drifting onto different DATABASE_URLs. For
+// non-Docker local dev, set DATABASE_URL directly in .env — see
+// .env.example.
+//
+// Never required outside Docker: if the secret file isn't present,
 // this is a silent no-op.
 
 const SECRETS_DIR = '/run/secrets';
@@ -20,17 +27,6 @@ function readSecret(name: string): string | null {
 }
 
 export function loadSecrets(): void {
-  if (!process.env.DATABASE_URL) {
-    const password = readSecret('postgres_password');
-    if (password) {
-      const user = process.env.POSTGRES_USER ?? 'raptor';
-      const db = process.env.POSTGRES_DB ?? 'raptor';
-      const host = process.env.POSTGRES_HOST ?? 'postgres';
-      const port = process.env.POSTGRES_PORT ?? '5432';
-      process.env.DATABASE_URL = `postgresql://${user}:${encodeURIComponent(password)}@${host}:${port}/${db}`;
-    }
-  }
-
   const smtp = readSecret('smtp_credentials');
   if (smtp) {
     for (const line of smtp.split('\n')) {
