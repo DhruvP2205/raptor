@@ -20,6 +20,7 @@ function validTimeline(): EventTimeline {
     votingOpensAt: new Date(base + 5 * day),
     votingClosesAt: new Date(base + 6 * day),
     votingWinnerAnnounceAt: new Date(base + 7 * day),
+    eventClosedAt: new Date(base + 8 * day),
   };
 }
 
@@ -68,6 +69,12 @@ describe('validateTimelineOrdering', () => {
       expect(err).toBeInstanceOf(BadRequestException);
       expect((err as any).response.fields).toEqual(['votingOpensAt', 'votingClosesAt']);
     }
+  });
+
+  it('rejects votingWinnerAnnounceAt equal to eventClosedAt (Module 11\'s strict <)', () => {
+    const t = validTimeline();
+    t.eventClosedAt = t.votingWinnerAnnounceAt;
+    expect(() => validateTimelineOrdering(t)).toThrow(BadRequestException);
   });
 
   it('rejects a timeline that is reversed at any single point in the chain', () => {

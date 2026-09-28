@@ -58,4 +58,16 @@ export function loadSecrets(): void {
       process.env.GITHUB_TOKEN_KEY = githubTokenKey;
     }
   }
+
+  // Module 12 (Certificates) — Ed25519 signing key (D34,
+  // docs/stages/12-certificates.md Section 5), read only by this
+  // process (certificate rendering happens synchronously in the API,
+  // not in apps/worker — unlike github_token_key, there is no second
+  // consumer of this secret).
+  if (!process.env.CERTIFICATE_SIGNING_KEY) {
+    const certificateSigningKey = readSecret('certificate_signing_key');
+    if (certificateSigningKey) {
+      process.env.CERTIFICATE_SIGNING_KEY = certificateSigningKey;
+    }
+  }
 }

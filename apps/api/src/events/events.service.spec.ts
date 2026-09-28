@@ -45,6 +45,12 @@ function validTimelineDto() {
     votingOpensAt: new Date(base + 5 * day).toISOString(),
     votingClosesAt: new Date(base + 6 * day).toISOString(),
     votingWinnerAnnounceAt: new Date(base + 7 * day).toISOString(),
+    // Wide gap from votingWinnerAnnounceAt (not the usual +1 day) — a
+    // Section 3.2 edit test below pushes votingWinnerAnnounceAt 30 days
+    // later to prove "extend a not-yet-passed deadline" still works,
+    // which needs room to move without also violating the
+    // votingWinnerAnnounceAt < eventClosedAt link.
+    eventClosedAt: new Date(base + 60 * day).toISOString(),
   };
 }
 
@@ -269,5 +275,6 @@ function parsedDates(dto: ReturnType<typeof validTimelineDto>) {
     votingOpensAt: new Date(dto.votingOpensAt),
     votingClosesAt: new Date(dto.votingClosesAt),
     votingWinnerAnnounceAt: new Date(dto.votingWinnerAnnounceAt),
+    eventClosedAt: new Date(dto.eventClosedAt),
   };
 }

@@ -21,6 +21,8 @@ secrets:
     file: ./secrets/app_secret.txt
   github_token_key:
     file: ./secrets/github_token_key.txt
+  certificate_signing_key:
+    file: ./secrets/certificate_signing_key.txt
 
 services:
   postgres:
@@ -73,6 +75,7 @@ services:
       - smtp_credentials
       - app_secret
       - github_token_key
+      - certificate_signing_key
     volumes:
       - uploads-data:/app/uploads
     ports:

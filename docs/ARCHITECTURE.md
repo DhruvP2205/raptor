@@ -28,15 +28,15 @@ implies.
 | Frontend framework | Next.js | Same language as backend; good SSR for public/shareable pages (gallery, certificates) |
 | Database | PostgreSQL | Strong JSON column support (`payloadJson`, `metadataJson`), array columns (`trackIds`), proper `timestamptz` for the UTC timeline model |
 | ORM | Prisma | Typed schema doubles as a machine-checked version of `DATA-MODEL.md`; safe migrations |
-| Cache / queues | Redis | Backs rate limiting (live as of Module 3 — upload endpoints, D72), CAPTCHA/PoW challenge storage, and any future job queue — one piece of infra, several uses |
+| Cache / queues | Redis | Backs rate limiting (live as of Module 3 — upload endpoints, D72), CAPTCHA/PoW challenge storage (live as of Module 11 — voting, `vote-pow:*`/`vote-captcha:*` keys), and any future job queue — one piece of infra, several uses |
 | Password hashing | argon2 | Memory-hard, current best-practice default |
 | Sessions | Opaque server-side tokens, HttpOnly cookie | Instantly revocable (unlike a JWT), and never exposed to JS — mitigates token theft via XSS |
 | Markdown | `markdown-it` + `sanitize-html` | One render function (`MarkdownService`), used identically for preview and production everywhere markdown is stored (Module 3) |
 | Image processing | `sharp` + `file-type` | Magic-byte detection, header-only dimension read before full decode, re-encode (strips EXIF/polyglots) — Module 3's upload pipeline |
 | API docs | `@nestjs/swagger` | Generates OpenAPI directly from the same decorators used for request validation — one source of truth, feeds the API-First bonus |
 | SVG→PDF (certificates) | Pure-JS conversion (e.g. `svg-to-pdfkit`) | No headless-browser dependency — keeps the image light and laptop-friendly |
-| CAPTCHA / abuse resistance | Self-built (visible fallback + invisible proof-of-work) | No third-party service call, satisfies the no-hosted-dependency rule |
-| Background jobs | BullMQ on Redis, separate `worker` container | Introduced in Module 6 — GitHub API calls during submission verification cannot run synchronously in the API's request thread without degrading responsiveness for other users; shared later by certificate rendering |
+| CAPTCHA / abuse resistance | Self-built (visible fallback + invisible proof-of-work) | Live as of Module 11 (`PowCaptchaService`) — no third-party service call, satisfies the no-hosted-dependency rule |
+| Background jobs | BullMQ on Redis, separate `worker` container | Introduced in Module 6 — GitHub API calls during submission verification cannot run synchronously in the API's request thread without degrading responsiveness for other users. Certificate rendering (Module 12) does not use this — see §4 |
 | Secret storage requiring reversible decryption (GitHub tokens) | AES-256-GCM, key via Docker secrets | The one deliberate exception to the platform's hash-everything pattern — a GitHub PAT must be read back in plaintext to call the API, unlike session/verification/invitation tokens which are compare-only |
 
 ---
@@ -116,10 +116,14 @@ Five containers, on two deliberately separated Docker networks:
 **The `worker` container** runs BullMQ against Redis, handling
 background jobs that must never run synchronously in the API's request
 thread — introduced in Module 6 (Submission Verification) for GitHub
-API calls, and shared by certificate rendering once that module is
-formalized. Two independent queues, one container: neither job type can
-block the other, and neither ever competes with the main API process for
-CPU/latency during a request.
+API calls, the one job type in this platform genuinely too slow/
+network-dependent to run inline. Certificate rendering (Module 12) does
+**not** use it: SVG→PDF via pure-JS `svg-to-pdfkit` is fast enough to
+run directly in the API's request thread (the stage doc's own "generated
+on demand... at request time" framing, backed by Redis caching), so an
+earlier assumption that it would reuse this container was corrected
+once the module was actually implemented — see CLAUDE.md on code/doc
+disagreements.
 
 **No mail-catcher container.** Considered and explicitly rejected (see
 `DECISIONS.md`) — SMTP is provider-agnostic and configured via Docker
@@ -184,6 +188,12 @@ templates with placeholder values and inline comments.
   `worker` decrypts it right before the one GitHub API call that needs
   the plaintext. Both containers mount the same `github_token_key`
   secret; there is no cross-process handoff of the decrypted value.
+- **The certificate-signing key** (Module 12, Ed25519) is read only by
+  `api` — certificate rendering happens synchronously in the API's
+  request thread, not in `worker`, so there's no second consumer the
+  way there is for the GitHub-token key. A plain `openssl rand -hex 32`
+  doesn't produce a valid Ed25519 key; `generate-certificate-signing-key.ts`
+  exists specifically because this secret can't reuse that one-liner.
 
 ---
 
@@ -237,19 +247,18 @@ vs. where the clock currently sits) before being modeled as one enum.
 ## 8. Deferred/not-yet-designed subsystems
 
 Documented here so it's clear what's intentionally not architected yet,
-rather than accidentally forgotten. All ten currently-locked modules
-(Auth & Email through Results & Rankings) are implemented as of this
-update — what's actually listed here still has **no stage doc at
-all**:
+rather than accidentally forgotten. Modules 1-12 (Auth & Email through
+Certificates) are implemented as of this update; Module 13 (Comments)
+has a locked stage doc too but isn't implemented yet — it belongs in
+the module list, not this one. What's actually listed here still has
+**no stage doc at all**:
 
 - The shareable, not-yet-bound judge invitation link (Section 3.2 of
   Module 2's stage doc, bullet 2) — direct-add by known email is
   implemented; the generic link variant has no resolved data model yet
   (D64). Revisit before claiming Module 2 fully done.
-- Voting (rounds, anti-abuse, shortlist) — heavily discussed in
-  conversation, not yet written as a stage doc
-- Certificates — heavily discussed, not yet written as a stage doc, will
-  reuse the `worker` container introduced in Module 6
+- Bulk certificate download/export (D40) — deliberately optional/
+  dropped scope, not something the locked Module 12 stage doc requires.
 - REST API/webhooks, bulk import/export, pairwise judging mode,
   normalization proof, threat model doc, OpenAPI publication
 

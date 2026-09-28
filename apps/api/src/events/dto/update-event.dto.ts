@@ -106,4 +106,8 @@ export class UpdateEventDto {
   @IsOptional()
   @IsISO8601()
   votingWinnerAnnounceAt?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  eventClosedAt?: string;
 }

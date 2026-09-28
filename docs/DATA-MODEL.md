@@ -25,13 +25,15 @@ way again, Module 8 added `judgingClosesAt` (D108) and
 `finalScoreDisplayScale`. `Submission` started as a minimal anchor in
 Module 4 — `id`, `teamId`, `everSubmitted`, `createdAt` (D75) — and
 Module 5 extended it additively to the full shape below, per its own
-scope. `eventClosedAt` is still deliberately absent (voting, no locked
-stage doc yet). If the live schema and a field documented here
-disagree **and the owning module has already been implemented**,
-that's a bug. Certificates and voting are discussed extensively in
-`DECISIONS.md` but don't have a finalized stage doc yet, so their
-tables are sketched here as
-forward-looking and may still shift.
+scope. **Modules 11-12 (Voting, Certificates) are now implemented** —
+`Event.eventClosedAt`/`votingEligibilityMode`/`certificatesEnabled*`,
+`VotingRound`, `ShortlistEntry`, `Vote`, `VoteAbuseFlag`,
+`VotingResultVersion`, `VotingResultEntry`, `Certificate`,
+`CertificateTemplate` all exist in the live schema (§11-12 below).
+**Module 13 (Comments) has a locked stage doc as of this update but is
+not yet implemented** — §13 below describes its target schema only. If
+the live schema and a field documented here disagree **and the owning
+module has already been implemented**, that's a bug.
 
 ---
 
@@ -103,9 +105,10 @@ is ever consulted for event-scoped actions.
 principle as `Event` itself starting as a minimal anchor (D59):
 `maxTeamSize` arrived with Module 4 (D75), `trackAttachmentMode` with
 Module 5, `maxProjectsPerJudge` with Module 7, `judgingClosesAt` and
-`finalScoreDisplayScale` with Module 8 (D108). `eventClosedAt` is still
-absent — it's only used by voting-round-restart logic, which has no
-locked stage doc yet. `phase` adds a synthetic `NOT_STARTED` value
+`finalScoreDisplayScale` with Module 8 (D108), `eventClosedAt` and
+`votingEligibilityMode` with Module 11 (voting-round-restart window and
+eligibility policy, D43/D49/D142 — see §11 below). `phase` adds a
+synthetic `NOT_STARTED` value
 (D69) for a PUBLISHED event sitting before `registrationOpensAt`, not
 named in the stage doc's own phase list but required by its explicit
 "early hype, before registration opens" supported use case (Section 8).
@@ -121,7 +124,9 @@ named in the stage doc's own phase list but required by its explicit
 | `maxTeamSize` | int, default 4 | **Implemented (Module 4, D75).** Admin counts toward the total (D25) |
 | `maxProjectsPerJudge` | int, default 20 | **Implemented (Module 7).** Event-wide cap referenced by both manual and algorithmic assignment; a per-judge `EventMembership.projectLimitOverride` can override it. Default is an inferred value, not stated by the stage doc — see the schema's own comment |
 | `finalScoreDisplayScale` | int, default 5 | **Implemented (Module 8).** Organizer-facing display scale — entirely separate from the 0-100 judge input scale (§8 below); never the same number, never conflated |
-| Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `judgingClosesAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`. (`eventClosedAt` not yet implemented — voting's field, no locked stage doc.) |
+| `votingEligibilityMode` | enum: `PARTICIPANTS_ONLY \| VERIFIED_PLATFORM_USERS`, nullable | **Implemented (Module 11, D43).** Organizer-chosen once; nullable until then (round 1 cannot be created without it), immutable once round 1 exists — see §11 |
+| Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `judgingClosesAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`, `eventClosedAt` |
+| `eventClosedAt` | timestamptz, UTC | **Implemented (Module 11, D49/D142).** Upper bound of the voting-round-restart window (`[resultsAnnounceAt, eventClosedAt]`); added to the ordering chain strictly after `votingWinnerAnnounceAt`, same additive precedent as `judgingClosesAt`. Introduces no new `EventPhase` value — see §11 |
 | `judgingClosesAt` | timestamptz, UTC | **Implemented (Module 8, D108).** Sits between `eventEndsAt` and `resultsAnnounceAt` in the ordering chain; Module 3's own code (`event-timeline.ts`, `event-phase.ts`) was amended to add it and the new `JUDGING_CLOSED` phase — the one place a later module amends an earlier, already-shipped one, per Module 8 Section 10 (and Module 3's own doc, Sections 2.2/3.3). |
 | *(computed, not stored)* `phase` | `EventPhase \| null` | Derived from `now()` vs. the timeline fields on every read (D15); `null` for non-PUBLISHED, `NOT_STARTED` for PUBLISHED-but-pre-registration (D69). Now includes `JUDGING_CLOSED`, between `JUDGING` and `RESULTS_ANNOUNCED` (Module 8). |
 
@@ -528,65 +533,177 @@ frozen computation.
 
 ---
 
-## 11. Certificates (forward-looking — not yet a finalized stage doc)
+## 11. Voting (Module 11)
 
-Sketched here per the extensive discussion in `DECISIONS.md` D34-D40;
-treat as directional, not locked, until a proper stage doc exists.
+**Implemented.** See `stages/11-voting.md`. Depends on Module 10's
+publish mechanism for shortlist reveal timing, and reuses its
+draft/publish/correction pattern rather than inventing a new one
+(`VotingResultsService`, mirroring `ResultsService`).
+
+### `VotingRound`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `eventId`, `roundNumber` | | Unique on `(eventId, roundNumber)` |
+| `status` | enum: `ACTIVE \| SUPERSEDED \| DEACTIVATED` | `SUPERSEDED` is declared (the stage doc's own table lists it) but never produced by current application code — only `ACTIVE -> DEACTIVATED` (Section 7's restart flow) is ever exercised; implemented literally per CLAUDE.md rather than silently dropped, flagged in the schema's own comment |
+| `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt` | datetime | Round 1 initializes from the event's original timeline fields; a restart round gets fresh organizer-set values |
+| `deactivatedAt`, `deactivatedByUserId`, `deactivationReason` | | `deactivationReason` is **mandatory text**, not optional, on every restart (D49) |
+
+### `ShortlistEntry`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `votingRoundId`, `submissionId` | | Unique on `(votingRoundId, submissionId)` |
+| `addedByUserId`, `isAutoSuggested` | | Provenance only |
+
+Becomes publicly visible the moment judge-decided results are published
+(`PublishedResultVersion.status: LIVE`, Module 10) — not at
+`votingOpensAt`. Voting itself remains gated separately by
+`votingOpensAt`/`votingClosesAt` (D141).
+
+### `Vote`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `votingRoundId` | fk | Unique on `(votingRoundId, userId)` — one-vote constraint is scoped per round, not per event — a restart gives everyone a fresh vote (D49) |
+| `submissionId`, `userId` | | Single-choice: exactly one submission per user per round (D42) — no `weight` field, since quadratic voting was dropped for public voting |
+| `ipHash` | string, nullable | HMAC-keyed on `APP_SECRET`, same construction as `Session.ipHash` (D58) — shared via `common/ip-hash.util.ts` rather than re-derived; null only if `APP_SECRET` isn't configured |
+
+No public-facing field ever exposes who voted for what — only aggregate
+percentage/count are surfaced post-publication (D46).
+
+### `VoteAbuseFlag`
+
+| Field | Type | Notes |
+|---|---|---|
+| `id`, `votingRoundId`, `ipHash`, `implicatedUserIds` | | Unique on `(votingRoundId, ipHash)` |
+| `status` | enum: `PENDING \| REVIEWED_CLEARED \| REVIEWED_BANNED` | Flags never auto-block a vote — admin-reviewed only (D47). Review can ban a chosen subset of `implicatedUserIds`, not forced all-or-nothing — a flagged IP can implicate an innocent account alongside a genuinely abusive one (not stated explicitly by the stage doc; a reasonable narrowing of "admin can ban an account by email") |
+
+### `VotingResultVersion` / `VotingResultEntry`
+
+Reuses Module 10's draft/publish/correction pattern (never edited in
+place, only superseded) — see `stages/11-voting.md` Section 9.
+`VotingResultEntry.isSharedWin` handles tied vote counts via sharing,
+never an arbitrary tiebreaker (D142). Post-publish corrections are
+`DISQUALIFY` and `REASSIGN_CREDIT` (the latter is this implementation's
+reading of the stage doc's "adjust which submission is credited" —
+rejects if the target submission already has its own entry in that
+version, rather than silently merging two entries).
+
+CAPTCHA/proof-of-work challenge state is Redis-only (ephemeral,
+short-TTL, `vote-pow:*`/`vote-captcha:*` keys) — not part of the
+Postgres schema. Both fail OPEN on a genuine Redis connection error and
+fail CLOSED on a missing/expired/wrong answer — same fail-open-for-
+anti-abuse-not-authorization distinction `RateLimitService` already
+draws for itself (`ARCHITECTURE.md` §2/§6).
+
+### `Event` extension
+
+- `eventClosedAt: DateTime`, required — bounds the voting-restart
+  window (`[resultsAnnounceAt, eventClosedAt]`, D49) — see §3 above.
+- `votingEligibilityMode: enum`, nullable — `PARTICIPANTS_ONLY \|
+  VERIFIED_PLATFORM_USERS` (D43). **Cross-doc gap now resolved**:
+  `stages/11-voting.md`'s own Section 10 never formally declared this
+  field even though Section 2 discusses it and `stages/13-comments.md`
+  refers to it by name — implemented as nullable (organizer hasn't
+  chosen yet), settable exactly once, and locked immutable the moment
+  `VotingRound` round 1 exists for the event (mirrors the shortlist's
+  own "locked once finalized for round 1" rule, Section 4).
+
+---
+
+## 12. Certificates (Module 12)
+
+**Implemented.** See `stages/12-certificates.md`. Depends on Module 10
+(publish gate), and on Module 6/8 for disqualification/special-award
+exclusion. Certificate rendering runs synchronously in the API's
+request thread (`svg-to-pdfkit`, pure-JS) — not the `worker` container;
+an earlier assumption in `ARCHITECTURE.md` that it would reuse that
+container was corrected once this module was actually implemented.
+
+### `Event` extension
+
+| Field | Type | Notes |
+|---|---|---|
+| `certificatesEnabled` | boolean | Default `false` |
+| `certificatesEnabledAt`, `certificatesEnabledByUserId` | | Can only be set once a `PublishedResultVersion` exists at `status: LIVE` (Module 10, D144); rejects re-enabling once already true |
 
 ### `Certificate`
 
 | Field | Type | Notes |
 |---|---|---|
 | `id` | uuid | Unguessable, non-sequential by construction (D38) |
-| `eventId`, `userId` | | |
-| `role` | string | e.g. "participant", "judge", "winner" |
-| `payloadJson` | json | The facts a signature is computed over — **never a rendered image** (D34) |
-| `signature` | string | Ed25519 over `payloadJson` |
-| `publicKeyId` | string | |
-| `templateId`, `templateVersion` | fk, int | Snapshotted at issue time — a template edit bumps version and never retroactively changes an already-issued certificate's rendering basis |
+| `eventId`, `userId` | | **Recipient is always resolved from the authenticated caller's own participation record — never a free-text or searched-for input.** A direct, structural fix for a real vulnerability found in a competing platform (D143) |
+| `role` | enum: `PARTICIPANT \| JUDGE \| WINNER \| SPECIAL_AWARD_WINNER` | A person can hold multiple certificate rows for one event — a `WINNER` certificate is additional to, not a replacement for, their `PARTICIPANT` one (D146). `@@unique([eventId, userId, role])` — the DB itself, not just application logic, prevents duplicate issuance |
+| `teamId`, `submissionId` | fk, nullable | `teamId` null for solo participants and for `JUDGE`; `submissionId` null for `JUDGE` only |
+| `payloadJson` | json | The facts a signature is computed over — **never a rendered image** (D34). Canonicalized (recursively key-sorted) before signing/verifying, since Postgres `jsonb` doesn't preserve key order on a round trip |
+| `signature` | string | Ed25519 over `payloadJson`, base64 |
+| `publicKeyId` | string | Fingerprint of the currently-configured signing key — no rotation registry yet; verification simply fails if the certificate's `publicKeyId` doesn't match the currently-configured key |
+| `templateId`, `templateVersion` | fk, int | Points at one specific, immutable `CertificateTemplate` row — never retroactively changed by a later template edit (see below) |
 | `issuedAt` | datetime | |
+
+**Issuance trigger:** a single, unified event-wide switch
+(`certificatesEnabled`), flipped by organizer/admin, gated on judge
+results already being published live (D144). Covers participants and
+judges under the same trigger. Disqualified submissions' participants
+are excluded from automatic issuance by default; organizer can
+manually override per case (D145, bypasses the exclusion but not the
+uniqueness check — a second manual attempt for an already-issued role
+is rejected, not silently ignored).
 
 ### `CertificateTemplate`
 
 | Field | Type | Notes |
 |---|---|---|
-| `id`, `eventId` | | |
-| `svgMarkup` | text | **Sanitized on upload** (D36) — script tags, `on*` attributes, `foreignObject`, external references stripped via a real XML DOM parser |
-| `version` | int | Bumped on every edit |
+| `id`, `eventId` | | **Append-only — one row PER VERSION**, `@@unique([eventId, version])`. An edit creates a new row; it never mutates a previous one. This is the only way "an already-issued certificate continues rendering against that version forever" can hold in practice — a single mutable row would delete the very markup an old certificate needs the moment it's edited |
+| `svgMarkup` | text | **Sanitized on upload** (D36) via `sanitize-html`'s real parser (not regex), case-sensitive-attribute-preserving — strips `<script>`/`<style>`/`<foreignObject>`/`<use>`/`<image>` (content and all, not just the tag) and any attribute not on an explicit allowlist (which excludes every `on*`/`href` by omission) |
+| `version` | int | The "current" template for an event = the row with the highest `version` for that `eventId` |
 
 Rendering is never cached as a second source of truth — cache entries
 (Redis, keyed `certificate:{id}:{templateVersion}:{format}`, per D37)
-are disposable and fully reconstructable from `payloadJson` + template at
-any time.
+are disposable and fully reconstructable from `payloadJson` + the pinned
+template row at any time; a Redis outage falls through to a fresh
+render rather than failing the request.
+
+**Public certificate gallery:** `GET /users/:id/certificates` — no auth
+required, lists a user's certificates across every event. A deliberate
+public-by-default decision (D147), not an oversight. No
+per-certificate hide/opt-out exists in this design.
 
 ---
 
-## 12. Voting (forward-looking — not yet a finalized stage doc)
+## 13. Comments (Module 13)
 
-Sketched per D41-D50; directional only.
+**Locked stage doc as of this update, not yet implemented** — see
+`stages/13-comments.md`. Depends on Module 1 (`emailVerifiedAt`) and
+Module 5 (gallery visibility via `isDraft`).
 
-### `VotingRound`
-
-| Field | Type | Notes |
-|---|---|---|
-| `id`, `eventId`, `roundNumber` | | |
-| `status` | enum: `ACTIVE \| SUPERSEDED \| DEACTIVATED` | |
-| `deactivatedAt`, `deactivatedByUserId`, `deactivationReason` | | `deactivationReason` is **mandatory text**, not optional, on every restart (D49) |
-
-### `Vote`
+### `Comment`
 
 | Field | Type | Notes |
 |---|---|---|
-| `id`, `votingRoundId` | fk | One-vote constraint is scoped per round, not per event — a restart gives everyone a fresh vote (D49) |
-| `submissionId`, `userId` | | Single-choice: exactly one submission per user per round (D42) — no `weight` field, since quadratic voting was dropped for public voting |
-| `ipHash` | string | Always recorded regardless of access mode, for abuse review |
+| `id`, `submissionId`, `userId` | | |
+| `body` | text | |
+| `createdAt`, `editedAt` | datetime, nullable | `editedAt` reflects most-recent edit, same pattern as `Submission.submittedAt` (D31) |
+| `deletedAt` | datetime, nullable | Soft-delete only, never a hard `DELETE` |
+| `deletedByUserId`, `deletionReason` | | `deletionReason` mandatory only for moderation deletion (someone other than the comment's own author) — self-deletion needs no reason (D148) |
 
-No public-facing field ever exposes who voted for what — only aggregate
-percentage/count are surfaced post-publication (D46).
+### `Event` extension
+
+| Field | Type | Notes |
+|---|---|---|
+| `commentsEnabled` | boolean | Default `true` |
+
+Flat structure — no threading/replies (D148). Eligibility: any user
+with `emailVerifiedAt` set, not participation-gated. Rate-limited via
+the same Redis mechanism used for voting/CAPTCHA — no new
+infrastructure. A comment remains visible even if its submission later
+reverts to draft status — only new comment *creation* is gated by
+current gallery visibility (D149).
 
 ---
 
-## 13. Audit
+## 14. Audit
 
 ### `AuditLog`
 
@@ -598,7 +715,7 @@ corresponding audit entry for context.
 
 ---
 
-## 14. Import / export paths (brief requirement, tracked here as they're
+## 15. Import / export paths (brief requirement, tracked here as they're
 decided)
 
 - Event/Track/Prize descriptions are stored as markdown — directly

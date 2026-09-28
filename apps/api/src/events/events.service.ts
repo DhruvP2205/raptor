@@ -31,6 +31,7 @@ function parseFullTimeline(dto: CreateEventDto): EventTimeline {
     votingOpensAt: new Date(dto.votingOpensAt),
     votingClosesAt: new Date(dto.votingClosesAt),
     votingWinnerAnnounceAt: new Date(dto.votingWinnerAnnounceAt),
+    eventClosedAt: new Date(dto.eventClosedAt),
   };
 }
 

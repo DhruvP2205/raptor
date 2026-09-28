@@ -102,4 +102,10 @@ export class CreateEventDto {
 
   @IsISO8601()
   votingWinnerAnnounceAt!: string;
+
+  // Module 11's field (Voting) — see docs/stages/11-voting.md Section
+  // 7/10. Required at creation like every other timeline field, same
+  // precedent as judgingClosesAt (Module 8).
+  @IsISO8601()
+  eventClosedAt!: string;
 }

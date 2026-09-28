@@ -16,6 +16,7 @@ function timeline(): EventTimeline {
     votingOpensAt: new Date(base + 8 * day),
     votingClosesAt: new Date(base + 9 * day),
     votingWinnerAnnounceAt: new Date(base + 10 * day),
+    eventClosedAt: new Date(base + 11 * day),
   };
 }
 
@@ -66,6 +67,13 @@ describe('computeEventPhase', () => {
     const t = timeline();
     const farFuture = new Date(t.votingWinnerAnnounceAt.getTime() + 1000 * 60 * 60 * 24 * 365);
     expect(computeEventPhase({ status: 'PUBLISHED', ...t }, farFuture)).toBe(
+      'VOTING_WINNER_ANNOUNCED',
+    );
+  });
+
+  it('does not introduce a new phase at eventClosedAt — Module 11 never names one; it stays VOTING_WINNER_ANNOUNCED even once eventClosedAt has passed', () => {
+    const t = timeline();
+    expect(computeEventPhase({ status: 'PUBLISHED', ...t }, t.eventClosedAt)).toBe(
       'VOTING_WINNER_ANNOUNCED',
     );
   });

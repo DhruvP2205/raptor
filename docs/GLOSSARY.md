@@ -228,7 +228,63 @@ Two independent things, easy to conflate: `EventPhase` reaching
 `RESULTS_ANNOUNCED` is purely timestamp-computed (Module 3) and happens
 regardless of organizer action. What participants actually *see* is
 gated by whether a `PublishedResultVersion` exists at `status: LIVE` —
-a phase transition alone reveals nothing.
+a phase transition alone reveals nothing. **The same pattern applies to
+voting**, with `VotingResultVersion` and `EventPhase:
+VOTING_WINNER_ANNOUNCED` — see the Voting round vs. shortlist entry
+below for how the two publish gates (judge results and voting results)
+relate to each other.
+
+**Voting round vs. shortlist — reveal timing**
+The shortlist (which submissions are eligible to appear on a voting
+ballot) becomes publicly visible **the moment judge-decided results are
+published** (`PublishedResultVersion.status: LIVE`, Module 10) — not at
+`votingOpensAt`. Voting itself (actually casting a vote) is gated
+separately by `votingOpensAt`/`votingClosesAt`. This means there's
+normally a real gap where the shortlist is public knowledge but voting
+hasn't opened yet — expected and intentional, not a bug.
+
+**Minor correction vs. full round restart (voting)**
+Two different-weight fixes for a voting round, not to be confused:
+- **Minor correction** — cosmetic only (a typo, a wrong-project swap on
+  the ballot display). **Zero effect on votes already cast or the
+  count.** Logged, but doesn't touch `Vote` rows at all.
+- **Full restart** — deactivates the entire round
+  (`VotingRound.status: DEACTIVATED`), zero vote carryover, shortlist
+  rebuilt from scratch, every voter (including prior voters) gets a
+  fresh vote in the new round. Requires a mandatory reason, unlimited
+  uses, only actionable in the window between `resultsAnnounceAt` and
+  `eventClosedAt`.
+
+**Certificate issuance — never a searched-for, free-text claim**
+A hard structural rule, not just a UI convention: there is no flow
+anywhere in this platform where a person searches for a project/team
+and types a name to receive a certificate. A certificate's recipient is
+always resolved from the authenticated caller's own existing
+participation record (`TeamMembership`, `EventMembership`,
+`JudgeAssignment`), and the displayed name always comes from
+`User.displayName` on that same account — never a form field. This
+exists specifically because a real competing platform was found to
+allow exactly that pattern, letting anyone claim anyone else's project
+under a fake name. See `12-certificates.md` Section 2 and
+`DECISIONS.md` D143.
+
+**Certificate role vs. multiple certificates per event**
+`Certificate.role` (`PARTICIPANT | JUDGE | WINNER |
+SPECIAL_AWARD_WINNER`) is fixed per row — a person who both participated
+and won holds **two separate `Certificate` rows** for the same event,
+not one row whose content changes depending on outcome. Don't design
+code that assumes exactly one certificate per person per event.
+
+**Self-deletion vs. moderation deletion**
+A recurring pattern for any user-generated content that can be removed
+by more than one kind of actor: **the content's own author** can
+delete it freely, no justification needed. **Anyone else** (organizer,
+admin) removing the same content is a moderation action, and
+**requires a mandatory written reason**, logged to `AuditLog` — same
+distinction as, e.g., a participant leaving their own team (no reason
+needed) versus an organizer disqualifying a submission (reason
+required). First formalized for comments (Module 13), but the
+distinction generalizes to any future user-content-removal feature.
 
 **Guard** (technical)
 A NestJS authorization check that runs before a route handler executes,

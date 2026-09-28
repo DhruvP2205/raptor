@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AssignmentsModule } from './assignments/assignments.module';
 import { AuditModule } from './audit/audit.module';
 import { CalibrationModule } from './calibration/calibration.module';
+import { CertificatesModule } from './certificates/certificates.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
 import { GithubTokensModule } from './github-tokens/github-tokens.module';
@@ -23,6 +24,7 @@ import { TeamsModule } from './teams/teams.module';
 import { TracksModule } from './tracks/tracks.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { VerificationModule } from './verification/verification.module';
+import { VotingModule } from './voting/voting.module';
 
 @Module({
   imports: [
@@ -49,6 +51,8 @@ import { VerificationModule } from './verification/verification.module';
     ScoringModule,
     NormalizationModule,
     ResultsModule,
+    VotingModule,
+    CertificatesModule,
   ],
   controllers: [AppController],
 })

@@ -1506,3 +1506,104 @@ checks pre-normalization raw total before bonus) — bonus is checked
 *before* the general final score for special awards, since a bonus
 track (e.g. "Innovation") often correlates more directly with what a
 special category is rewarding than the overall weighted rubric does.
+
+---
+
+## Voting (Module 11)
+
+**D141 — Shortlist reveal is tied to Module 10's actual publish
+mechanism (`PublishedResultVersion.status: LIVE`), not a raw
+`resultsAnnounceAt` timestamp check.**
+Context: original design said the shortlist is "announced at the same
+time" as judge winners — that phrasing predates Module 10's formal
+draft/publish workflow, where publish is an explicit action that can
+lag the timestamp under `MANUAL` mode. Resolved directly by Claude as
+the more precise reading now that the real mechanism exists, rather
+than re-asked as a separate question.
+
+**D142 — Tied vote counts for the audience-choice winner share the
+win, with no arbitrary fourth-level tiebreaker.**
+Context: vote-count ties were never addressed during the original
+voting design discussion (which predates Module 10's tie-share
+philosophy). Decided directly by Claude for consistency with the
+established pattern from D132/D140 (share rather than invent an
+arbitrary tiebreaker like submission ID or timestamp) rather than
+treated as a new, separate policy question.
+
+---
+
+## Certificates (Module 12)
+
+**D143 — Certificate issuance is anchored on a real vulnerability found
+in a competing platform (zerodepshack.com): a public flow letting
+anyone search for any project/team and type an arbitrary free-text name
+to generate a signed-looking certificate, with zero identity binding.
+This platform structurally forbids that pattern — there is no
+certificate flow anywhere that accepts a typed name; the recipient is
+always resolved from the authenticated caller's own participation
+record, and `displayName` comes directly from their account.**
+Context: user shared a real certificate image from that platform,
+showing "Fake Name" successfully issued for a real team's project.
+This is treated as a concrete, named threat-model entry, not a
+hypothetical — see `12-certificates.md` Section 2.
+
+**D144 — Certificate issuance for an entire event is controlled by a
+single, unified switch (`Event.certificatesEnabled`), which can only be
+enabled once judge results are already published live
+(`PublishedResultVersion: status: LIVE`, Module 10) — covering both
+participants and judges under the same trigger.**
+Context: explicit user instruction ("certificate only enable after
+winner announcement happen"). The unified-trigger-for-judges-too
+choice (rather than gating judges earlier, at `judgingClosesAt`) was
+decided directly by Claude for simplicity.
+
+**D145 — Disqualified submissions' participants are excluded from
+automatic certificate issuance by default; organizer/admin can
+manually override and issue one per case.**
+Context: decided directly by Claude, not asked back — consistent with
+disqualified submissions already being excluded from judge results
+(Module 6/10) entirely; extending that exclusion to certificates was
+the more consistent default than treating certificate eligibility as
+independent of disqualification status.
+
+**D146 — Certificate content carries no per-team-member role
+distinction — a team admin and a regular member receive identically
+formatted certificates.**
+Context: explicit user instruction. A person can hold multiple
+separate certificate rows for the same event (e.g. `PARTICIPANT` and
+`WINNER`) rather than one row whose content varies — kept the
+`Certificate.role` field simple and fixed per row.
+
+**D147 — Every user profile has a public certificate gallery
+(`GET /users/:id/certificates`), visible with no authentication
+required, listing certificates across every event.**
+Context: explicit user instruction. Restated plainly in the stage doc
+as a deliberate tradeoff, not an oversight — a user's full hackathon
+participation history becomes discoverable via their profile URL. No
+per-certificate hide/opt-out was requested or built.
+
+---
+
+## Comments (Module 13)
+
+**D148 — Comments are a small, mostly-Claude-decided module: eligible
+to any user with `emailVerifiedAt` set (not participation-gated, unlike
+voting), flat with no threading, editable anytime with a visible
+`(edited)` indicator, soft-delete-only, and rate-limited via the same
+Redis mechanism already built for voting/CAPTCHA.**
+Context: the brief only specifies "comments on gallery projects" with
+no further detail — every sub-decision here was made directly by
+Claude, drawing on consistent low-risk defaults already established
+elsewhere in this platform (soft-delete, mandatory reasons for
+moderation actions, reusing existing rate-limiting infrastructure)
+rather than treated as genuine policy forks requiring user input.
+
+**D149 — A comment remains visible even if its submission later
+reverts to draft status (e.g. via Module 5's unsubmit) — only new
+comment *creation* is gated by current gallery visibility, not the
+continued display of comments already posted.**
+Context: decided directly by Claude as the more consistent behavior
+(an existing public statement shouldn't retroactively disappear just
+because the underlying submission's draft flag toggled), flagged as an
+explicit test case precisely because it's an easy inconsistency to
+introduce by accident during implementation.

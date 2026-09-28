@@ -103,6 +103,25 @@ model User {
   // Section 8).
   resultsDraftsCreated       ResultsDraft[]            @relation("ResultsDraftCreator")
   publishedResultVersions    PublishedResultVersion[]  @relation("ResultVersionPublisher")
+
+  // Module 11 (Voting) — six distinct relation names since one user can
+  // plausibly occupy several of these roles across the platform's
+  // lifetime (an organizer who also votes as a verified user on another
+  // event, etc.), same multi-relation-per-table precedent as Module 10
+  // above.
+  votingRoundsCreated       VotingRound[]          @relation("VotingRoundCreator")
+  votingRoundsDeactivated   VotingRound[]          @relation("VotingRoundDeactivator")
+  shortlistEntriesAdded     ShortlistEntry[]        @relation("ShortlistEntryAdder")
+  votesCast                 Vote[]                  @relation("VoteCaster")
+  voteAbuseFlagsReviewed    VoteAbuseFlag[]         @relation("VoteAbuseFlagReviewer")
+  votingResultVersionsPublished VotingResultVersion[] @relation("VotingResultVersionPublisher")
+
+  // Module 12 (Certificates) — `certificates` is every Certificate this
+  // user is the recipient of (the public gallery's own data source,
+  // Section 7); `certificatesEnabledForEvents` is provenance-only, the
+  // organizer/admin who flipped the switch (Section 2.1).
+  certificates                 Certificate[]          @relation("CertificateRecipient")
+  certificatesEnabledForEvents Event[]                @relation("CertificatesEnabler")
 }
 
 model Session {
@@ -129,12 +148,10 @@ enum AccountType {
 
 // Module 2 introduced this as a deliberately minimal anchor (D59); this
 // is now Module 3's (docs/stages/03-event-management.md) full shape,
-// with maxTeamSize (Module 4, D75) and trackAttachmentMode (Module 5)
-// added additively on top as each owning module landed.
-//
-// eventClosedAt is still deliberately NOT here: it's used only by
-// voting-round-restart logic (not yet a locked stage doc) and isn't
-// part of any currently-implemented module's own validation chain.
+// with maxTeamSize (Module 4, D75), trackAttachmentMode (Module 5),
+// maxProjectsPerJudge (Module 7), finalScoreDisplayScale/
+// judgingClosesAt (Module 8), and votingEligibilityMode/eventClosedAt
+// (Module 11) added additively on top as each owning module landed.
 model Event {
   id   String @id @default(uuid())
   name String
@@ -189,13 +206,45 @@ model Event {
   // 0-100 per criterion regardless of what this is set to.
   finalScoreDisplayScale Int @default(5)
 
+  // Module 11's field (Voting, Section 2, D43) — organizer-chosen once
+  // at the event level, not re-configurable per round. Nullable: the
+  // doc describes this as "chosen, once," not necessarily at event
+  // creation time (organizer may not be ready to decide voting policy
+  // months before voting matters); VotingService enforces that it must
+  // be set before round 1 can be created, and locks it immutable once
+  // round 1 exists — same "locked once round 1 exists" precedent as the
+  // shortlist (Section 4). This field is discussed by name in Section 2
+  // of docs/stages/11-voting.md but was never formally placed in that
+  // doc's own Section 10 (Data Model) table — cross-doc gap, resolved
+  // here rather than left unimplemented; see docs/DATA-MODEL.md §11.
+  votingEligibilityMode VotingEligibilityMode?
+
+  // Module 12's fields (Certificates, Section 2.1) — single, unified
+  // event-wide switch. `certificatesEnabled` can only ever flip
+  // true->once validated against a LIVE PublishedResultVersion existing
+  // (Module 10) — CertificatesService enforces this, not the schema.
+  // One switch controls issuance for participants and judges alike.
+  certificatesEnabled         Boolean   @default(false)
+  certificatesEnabledAt       DateTime?
+  certificatesEnabledByUserId String?
+  certificatesEnabledByUser   User?     @relation("CertificatesEnabler", fields: [certificatesEnabledByUserId], references: [id])
+
   // Timeline — all required at creation (Section 3.3's ordering chain
   // can't be validated against a partially-set timeline). UTC.
   // judgingClosesAt (Module 8, D108) sits between eventEndsAt and
   // resultsAnnounceAt — Module 3's original design modeled judging as
   // an implicit, unstored gap; this replaces that with a real,
   // organizer-set boundary that submit-review/PATCH scores actually
-  // enforce (Section 7 there).
+  // enforce (Section 7 there). eventClosedAt (Module 11, D49/D142) is
+  // the upper bound of the voting-round-restart window (Section 7,
+  // docs/stages/11-voting.md) — added as a required timeline field
+  // following the exact same additive precedent judgingClosesAt set
+  // for Module 8, strictly after votingWinnerAnnounceAt. It introduces
+  // no new EventPhase value: the voting doc never names one for it, and
+  // every Module 11 visibility/gating rule is explicitly defined in
+  // terms of PublishedResultVersion/VotingResultVersion status, not
+  // EventPhase (Section 8/9) — so it's added to the ordering chain only,
+  // not to event-phase.ts's PHASE_BOUNDARIES.
   registrationOpensAt    DateTime
   registrationClosesAt   DateTime
   eventStartsAt          DateTime
@@ -207,6 +256,7 @@ model Event {
   votingOpensAt          DateTime
   votingClosesAt         DateTime
   votingWinnerAnnounceAt DateTime
+  eventClosedAt          DateTime
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -240,6 +290,19 @@ model Event {
   // ones (Section 8, docs/stages/10-results-and-rankings.md).
   resultsDrafts            ResultsDraft[]
   publishedResultVersions  PublishedResultVersion[]
+
+  // Module 11 — every voting round ever created for this event
+  // (including DEACTIVATED ones, kept for audit, Section 7) and every
+  // voting-results version ever published (Section 9), same
+  // never-deleted history pattern as Module 10's relations above.
+  votingRounds          VotingRound[]
+  votingResultVersions  VotingResultVersion[]
+
+  // Module 12 — every certificate ever issued for this event, and every
+  // template version ever uploaded (append-only, Section 8,
+  // docs/stages/12-certificates.md).
+  certificates         Certificate[]
+  certificateTemplates CertificateTemplate[]
 }
 
 enum EventStatus {
@@ -247,6 +310,12 @@ enum EventStatus {
   PUBLISHED
   ARCHIVED
   DELETED
+}
+
+// Module 11 (Voting) — see docs/stages/11-voting.md Section 2/D43.
+enum VotingEligibilityMode {
+  PARTICIPANTS_ONLY
+  VERIFIED_PLATFORM_USERS
 }
 
 enum TrackAttachmentMode {
@@ -397,6 +466,10 @@ model Team {
   members    TeamMembership[]
   submission Submission?
 
+  // Module 12 — certificates whose team-name field is sourced from this
+  // team (nullable on Certificate; solo participants have none).
+  certificates Certificate[]
+
   @@unique([eventId, name])
   @@unique([joinLinkPrefix, joinLinkSuffix])
 }
@@ -491,6 +564,18 @@ model Submission {
   // docs/stages/10-results-and-rankings.md).
   rankResultEntries         RankResultEntry[]
   specialAwardResultEntries SpecialAwardResultEntry[]
+
+  // Module 11 — every shortlist entry, vote, and voting-results entry
+  // this submission has ever been part of, across every round/version
+  // in the event's history (Section 10, docs/stages/11-voting.md).
+  shortlistEntries    ShortlistEntry[]
+  votesReceived       Vote[]
+  votingResultEntries VotingResultEntry[]
+
+  // Module 12 — certificates whose project-name field is sourced from
+  // this submission (nullable on Certificate; judge certificates have
+  // none, docs/stages/12-certificates.md Section 8).
+  certificates Certificate[]
 
   // NULLs are distinct under Postgres's default unique-index semantics,
   // so this only constrains actual (eventId, soloUserId) pairs — it
@@ -1090,4 +1175,301 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([actorUserId])
+}
+
+// Module 11 (Voting) — see docs/stages/11-voting.md Section 10. A round
+// is never deleted, only DEACTIVATED via a full restart (Section 7) —
+// its votes stay permanently attached for audit but are excluded from
+// any live tally from that point forward (enforced at the application
+// layer: VotingService only ever tallies/accepts votes against the
+// current ACTIVE round).
+model VotingRound {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  roundNumber Int
+
+  status VotingRoundStatus @default(ACTIVE)
+
+  // Round 1 initializes from the event's own votingOpensAt/
+  // votingClosesAt/votingWinnerAnnounceAt; a restart round gets fresh
+  // organizer-set values at creation time (Section 7) — this table's
+  // own columns, not a live read of Event's, so a restart's fresh
+  // values never retroactively change what an already-DEACTIVATED
+  // round's window was.
+  votingOpensAt          DateTime
+  votingClosesAt         DateTime
+  votingWinnerAnnounceAt DateTime
+
+  deactivatedAt       DateTime?
+  deactivatedByUserId String?
+  deactivatedByUser   User?     @relation("VotingRoundDeactivator", fields: [deactivatedByUserId], references: [id])
+  // Mandatory, non-empty, enforced at the application layer — same
+  // conditionally-required-text-field pattern as every other mandatory
+  // reason in this project (Section 7).
+  deactivationReason  String?
+
+  createdByUserId String
+  createdByUser   User     @relation("VotingRoundCreator", fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  shortlistEntries     ShortlistEntry[]
+  votes                Vote[]
+  abuseFlags           VoteAbuseFlag[]
+  votingResultVersions VotingResultVersion[]
+
+  @@unique([eventId, roundNumber])
+}
+
+// SUPERSEDED is declared because docs/stages/11-voting.md Section 10's
+// own data-model table lists it for VotingRound.status, but no prose
+// anywhere in that doc ever describes a transition that produces it —
+// Section 7 only ever describes ACTIVE -> DEACTIVATED. Implemented
+// exactly as the doc's table states rather than silently dropped, per
+// CLAUDE.md ("code implements what the docs say"), but flagged here:
+// current application code never writes SUPERSEDED to this field.
+enum VotingRoundStatus {
+  ACTIVE
+  SUPERSEDED
+  DEACTIVATED
+}
+
+// Section 4/10 — the ballot's candidate list for one round. Provenance
+// only (addedByUserId/isAutoSuggested); no behavioral difference
+// downstream between an auto-suggested and a manually-added entry.
+model ShortlistEntry {
+  id String @id @default(uuid())
+
+  votingRoundId String
+  votingRound   VotingRound @relation(fields: [votingRoundId], references: [id], onDelete: Cascade)
+
+  submissionId String
+  submission   Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  addedByUserId  String
+  addedByUser    User    @relation("ShortlistEntryAdder", fields: [addedByUserId], references: [id])
+  isAutoSuggested Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([votingRoundId, submissionId])
+}
+
+// Section 3/10 — single-choice ballot. Unique on (votingRoundId,
+// userId): one pick per user per round, enforced at the database level
+// as well as checked in application code before insert (Section 3).
+model Vote {
+  id String @id @default(uuid())
+
+  votingRoundId String
+  votingRound   VotingRound @relation(fields: [votingRoundId], references: [id], onDelete: Cascade)
+
+  submissionId String
+  submission   Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("VoteCaster", fields: [userId], references: [id], onDelete: Cascade)
+
+  // HMAC-keyed on APP_SECRET, same one-way construction as
+  // Session.ipHash (Module 1, D58) — a plain hash of an IP address is
+  // reversible via lookup table; HMAC with a server-only key is what
+  // actually makes it one-way. Always recorded regardless of
+  // eligibility mode (Section 10's own note) — null only if APP_SECRET
+  // isn't configured, same graceful-degradation precedent as Session.
+  ipHash String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([votingRoundId, userId])
+}
+
+// Section 5.2/10 — never an automatic block or ban (D47); a
+// PENDING-review queue entry only. implicatedUserIds grows as more
+// accounts are seen sharing the same flagged ipHash pattern within this
+// round.
+model VoteAbuseFlag {
+  id String @id @default(uuid())
+
+  votingRoundId String
+  votingRound   VotingRound @relation(fields: [votingRoundId], references: [id], onDelete: Cascade)
+
+  ipHash String
+
+  implicatedUserIds String[] @default([])
+
+  status VoteAbuseFlagStatus @default(PENDING)
+
+  reviewedByUserId String?
+  reviewedByUser   User?     @relation("VoteAbuseFlagReviewer", fields: [reviewedByUserId], references: [id])
+  reviewedAt       DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([votingRoundId, ipHash])
+}
+
+enum VoteAbuseFlagStatus {
+  PENDING
+  REVIEWED_CLEARED
+  REVIEWED_BANNED
+}
+
+// Section 9/10 — the voting equivalent of PublishedResultVersion
+// (Module 10); immutable once created, never edited in place, only
+// superseded (same D139-equivalent rule, restated for voting).
+model VotingResultVersion {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  votingRoundId String
+  votingRound   VotingRound @relation(fields: [votingRoundId], references: [id])
+
+  versionNumber Int
+  status        VotingResultVersionStatus @default(LIVE)
+
+  publishedByUserId String
+  publishedByUser   User     @relation("VotingResultVersionPublisher", fields: [publishedByUserId], references: [id])
+  publishedAt       DateTime @default(now())
+
+  // Required whenever this version resulted from a post-publish
+  // correction rather than an original publish; required if
+  // status = UNPUBLISHED — same conditionally-required pattern as
+  // PublishedResultVersion (Section 9, reusing Module 10's pattern).
+  correctionReason String?
+  unpublishReason  String?
+
+  entries VotingResultEntry[]
+
+  @@unique([eventId, versionNumber])
+}
+
+enum VotingResultVersionStatus {
+  LIVE
+  SUPERSEDED
+  UNPUBLISHED
+}
+
+// One per submission per version (Section 10).
+model VotingResultEntry {
+  id String @id @default(uuid())
+
+  votingResultVersionId String
+  votingResultVersion   VotingResultVersion @relation(fields: [votingResultVersionId], references: [id], onDelete: Cascade)
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  voteCount      Int
+  votePercentage Float
+
+  // True if resolved via the vote-count tie-share outcome (Section 9,
+  // D142) — ties at the top share the win, no arbitrary tiebreaker.
+  isSharedWin Boolean @default(false)
+
+  // Post-publish correction only (Section 9, reusing Module 10's
+  // correction pattern) — disqualifies this entry from the public
+  // audience-choice result going forward; row itself never deleted.
+  isDisqualified Boolean @default(false)
+
+  @@unique([votingResultVersionId, submissionId])
+}
+
+// Module 12 (Certificates) — see docs/stages/12-certificates.md Section
+// 8. Recipient is always resolved server-side from an authenticated
+// account's own participation/judging record — never a free-text
+// input anywhere in this table's write path (Section 2, the direct
+// structural response to the zerodepshack.com vulnerability). Rows are
+// never deleted or edited in place once issued — payloadJson/signature
+// are a permanent, immutable record.
+model Certificate {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("CertificateRecipient", fields: [userId], references: [id], onDelete: Cascade)
+
+  role CertificateRole
+
+  // teamId null for solo participants and for JUDGE-role certificates
+  // (Section 3); submissionId null for JUDGE-role certificates only.
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  submissionId String?
+  submission   Submission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+
+  // The facts the signature covers, canonicalized (recursively
+  // key-sorted) before signing/verifying — Postgres's jsonb storage
+  // does not preserve insertion order or exact formatting, so
+  // verification always re-canonicalizes rather than trusting byte
+  // -for-byte round-trip fidelity (D34).
+  payloadJson Json
+
+  // Ed25519. publicKeyId is a short fingerprint of the public key that
+  // produced this signature (not a rotation registry — this platform
+  // has exactly one active signing key at a time; see
+  // certificate-signing.util.ts).
+  signature   String
+  publicKeyId String
+
+  // Snapshotted at issue time (D35/D36's "versioned" requirement) —
+  // templateId pins the exact immutable CertificateTemplate row this
+  // certificate was rendered against; a later template edit creates a
+  // new row (higher version) and never touches this one, so re-render
+  // is byte-for-byte stable forever. templateVersion is a denormalized
+  // copy of that row's own version, avoiding a join just to display it.
+  templateId      String
+  template        CertificateTemplate @relation(fields: [templateId], references: [id])
+  templateVersion Int
+
+  issuedAt DateTime @default(now())
+
+  // Prevents duplicate issuance of the same role for the same person on
+  // the same event — checked here (not just in application code) since
+  // "generate mine" must be safely repeatable/idempotent against a
+  // concurrent double-click.
+  @@unique([eventId, userId, role])
+}
+
+enum CertificateRole {
+  PARTICIPANT
+  JUDGE
+  WINNER
+  SPECIAL_AWARD_WINNER
+}
+
+// Append-only, one row PER VERSION per event (Section 4/8) — an edit
+// creates a NEW row with version+1 rather than mutating the previous
+// one in place. This is the only way "an already-issued Certificate...
+// continues rendering against that version forever, never
+// retroactively changing appearance" (Section 5) can actually hold: if
+// edits mutated a single row, the markup an old certificate was issued
+// against would simply cease to exist the moment the template changed.
+// "Current" template for an event = the row with the highest `version`
+// for that eventId (CertificateTemplatesService.getCurrentForEvent).
+model CertificateTemplate {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Sanitized on upload via a real SVG/XML-aware parser, never
+  // string/regex replacement (D36) — see
+  // certificates/svg-template-sanitizer.util.ts. This is the only copy
+  // ever stored; there is no parallel "raw" version kept anywhere.
+  svgMarkup String
+
+  version Int
+
+  createdAt DateTime @default(now())
+
+  certificates Certificate[]
+
+  @@unique([eventId, version])
 }
