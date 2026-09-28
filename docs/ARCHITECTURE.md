@@ -140,6 +140,11 @@ templates with placeholder values and inline comments.
   itself (`exec node dist/main.js`, inheriting the exported env var).
   Constructing the URL in only one place, before both processes start,
   avoids them silently drifting onto different connection strings.
+- **`app_secret`** is read by the Node app itself, same as SMTP
+  credentials, into `APP_SECRET` — a server-only key for HMAC-hashing
+  low-entropy values at rest (currently just `Session.ipHash`; see D58).
+  Not required — if absent, the app leaves `ipHash` null rather than
+  hash it with no key.
 
 ---
 

@@ -1,6 +1,14 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
+
+function makeUniqueConstraintError(): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: '5.22.0',
+  });
+}
 
 function makePrisma() {
   return {
@@ -76,6 +84,55 @@ describe('AuthService', () => {
           res,
         ),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('recovers from a concurrent-signup race with the same accurate error, not a raw 500', async () => {
+      const prisma = makePrisma();
+      // Up-front check sees nothing (genuinely didn't exist yet)...
+      prisma.user.findUnique.mockResolvedValueOnce(null);
+      // ...but a concurrent request's create() won the race, so this
+      // one's create() hits the real unique constraint.
+      prisma.user.create.mockRejectedValue(makeUniqueConstraintError());
+      // Re-check after the race finds the concurrent winner.
+      prisma.user.findUnique.mockResolvedValueOnce({
+        id: '1',
+        email: 'racer@example.com',
+        bannedAt: null,
+      });
+      const service = new AuthService(
+        prisma as any,
+        makeMail() as any,
+        makeSessions() as any,
+      );
+
+      await expect(
+        service.signup(
+          { email: 'racer@example.com', password: 'password123', displayName: 'X' },
+          req,
+          res,
+        ),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.user.findUnique).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-throws an unrelated create() failure as-is (not treated as a lost race)', async () => {
+      const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue(null);
+      const dbDown = new Error('connection refused');
+      prisma.user.create.mockRejectedValue(dbDown);
+      const service = new AuthService(
+        prisma as any,
+        makeMail() as any,
+        makeSessions() as any,
+      );
+
+      await expect(
+        service.signup(
+          { email: 'new@example.com', password: 'password123', displayName: 'X' },
+          req,
+          res,
+        ),
+      ).rejects.toBe(dbDown);
     });
   });
 

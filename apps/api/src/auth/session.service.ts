@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Session } from '@prisma/client';
 import type { Request, Response } from 'express';
-import { generateRawToken, sha256Hex } from '../common/crypto.util';
+import { generateRawToken, hmacSha256Hex, sha256Hex } from '../common/crypto.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 export const SESSION_COOKIE_NAME = 'raptor_session';
@@ -16,7 +16,25 @@ function sessionTtlMs(): number {
 // docs/stages/01-auth-and-email-setup.md Section 2.
 @Injectable()
 export class SessionService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(SessionService.name);
+
+  constructor(private readonly prisma: PrismaService) {
+    if (!process.env.APP_SECRET) {
+      this.logger.warn(
+        'APP_SECRET is not configured — session ipHash will be left null rather than hashed with no key (an unkeyed hash of an IP address is trivially reversible and would give no real protection).',
+      );
+    }
+  }
+
+  // Deliberately not sha256Hex: an IP address has too little entropy
+  // (~32 bits for IPv4) for a plain hash to resist a precomputed lookup
+  // table. HMAC with a server-only secret is what actually makes this
+  // one-way. No secret configured -> store nothing rather than a hash
+  // that only looks safe.
+  private hashIp(ip: string): string | null {
+    const secret = process.env.APP_SECRET;
+    return secret ? hmacSha256Hex(ip, secret) : null;
+  }
 
   async createSession(
     userId: string,
@@ -27,7 +45,7 @@ export class SessionService {
     const tokenHash = sha256Hex(rawToken);
     const expiresAt = new Date(Date.now() + sessionTtlMs());
     const userAgent = req.headers['user-agent'];
-    const ipHash = req.ip ? sha256Hex(req.ip) : null;
+    const ipHash = req.ip ? this.hashIp(req.ip) : null;
 
     await this.prisma.session.create({
       data: {

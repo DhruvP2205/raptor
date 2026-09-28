@@ -493,3 +493,36 @@ build: ran the actual `prisma migrate dev` (not just `validate`
 signup → verify → re-verify (idempotent replay) → login →
 `/auth/me` round trip, including confirming in the database directly
 that `verificationTokenHash` is genuinely not cleared on success (D54).
+
+**D58 — Two fixes applied after a post-implementation rules check on
+Module 1, both found by re-reading the committed code, not by the stage
+doc:**
+
+1. **Signup's existence check and insert were two separate round
+   trips with no transaction** — a classic check-then-act race. Two
+   concurrent signups for the same email could both pass the
+   "does this exist" `findUnique` before either `create()` landed; the
+   loser's `create()` then threw an unhandled Prisma `P2002`
+   (unique-constraint violation), surfacing as a raw 500 instead of the
+   intended `409 EMAIL_ALREADY_REGISTERED`. Fixed by catching `P2002` on
+   the `create()` and re-querying to produce the same accurate
+   banned-vs-already-registered error the up-front check gives,
+   extracted into a shared `rejectExistingEmail()` helper so the two
+   call sites can't drift. A transaction wouldn't have helped here
+   (Postgres's unique index still enforces atomicity at the `create()`
+   regardless); the fix is in handling the expected failure mode, not
+   preventing it.
+2. **`Session.ipHash` was `sha256Hex(ip)` — an unkeyed hash of a
+   low-entropy value.** IPv4 address space is only ~4 billion values;
+   anyone can precompute every possible hash in seconds and fully
+   reverse it. This isn't what "hashed" is supposed to buy here (compare
+   session/verification tokens, which are 256-bit random and genuinely
+   one-way under a plain hash). Fixed with a new `APP_SECRET`
+   (HMAC key, same Docker-secrets pattern as SMTP credentials — see
+   `secrets/app_secret.txt.example`), used via a new `hmacSha256Hex()`
+   in `crypto.util.ts`. If `APP_SECRET` isn't configured, `ipHash` is
+   left `null` rather than falling back to an unkeyed hash that would
+   only look safe — `ipHash` is already nullable and non-critical
+   (stored for a future "active sessions" view, not read by any
+   security decision yet), so "no value" is strictly better than "a
+   value that doesn't do what its name implies."

@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import type { User } from '@prisma/client';
+import { Prisma, type User } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { generateRawToken, sha256Hex } from '../common/crypto.util';
 import { MailNotConfiguredError, MailService } from '../mail/mail.service';
@@ -52,21 +52,28 @@ export class AuthService {
     };
   }
 
+  // Shared by the up-front check in signup() and by the concurrent
+  // -signup race recovery below — same distinct banned-vs-already
+  // -registered errors either way.
+  private rejectExistingEmail(user: User): never {
+    if (user.bannedAt) {
+      throw new ForbiddenException({
+        code: 'EMAIL_BANNED',
+        message: 'This email address is not permitted to register.',
+      });
+    }
+    throw new ConflictException({
+      code: 'EMAIL_ALREADY_REGISTERED',
+      message: 'An account with this email already exists.',
+    });
+  }
+
   async signup(dto: SignupDto, req: Request, res: Response) {
     const email = this.normalizeEmail(dto.email);
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      if (existing.bannedAt) {
-        throw new ForbiddenException({
-          code: 'EMAIL_BANNED',
-          message: 'This email address is not permitted to register.',
-        });
-      }
-      throw new ConflictException({
-        code: 'EMAIL_ALREADY_REGISTERED',
-        message: 'An account with this email already exists.',
-      });
+      this.rejectExistingEmail(existing);
     }
 
     const passwordHash = await argon2.hash(dto.password);
@@ -76,15 +83,36 @@ export class AuthService {
       Date.now() + verificationTtlMs(),
     );
 
-    const user = await this.prisma.user.create({
-      data: {
-        email,
-        passwordHash,
-        displayName: dto.displayName,
-        verificationTokenHash,
-        verificationTokenExpiresAt,
-      },
-    });
+    let user: User;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          displayName: dto.displayName,
+          verificationTokenHash,
+          verificationTokenExpiresAt,
+        },
+      });
+    } catch (err) {
+      // Lost a race against a concurrent signup for the same email —
+      // the up-front findUnique above can't see a write that lands
+      // between that check and this create. Re-check and give the same
+      // accurate (banned vs. already-registered) error instead of
+      // letting a raw unique-constraint error surface as a 500.
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        const concurrent = await this.prisma.user.findUnique({
+          where: { email },
+        });
+        if (concurrent) {
+          this.rejectExistingEmail(concurrent);
+        }
+      }
+      throw err;
+    }
 
     const emailDispatch = await this.sendVerificationEmail(email, rawToken);
 

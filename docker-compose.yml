@@ -17,6 +17,8 @@ secrets:
     file: ./secrets/postgres_password.txt
   smtp_credentials:
     file: ./secrets/smtp_credentials.txt
+  app_secret:
+    file: ./secrets/app_secret.txt
 
 services:
   postgres:
@@ -67,6 +69,7 @@ services:
     secrets:
       - postgres_password
       - smtp_credentials
+      - app_secret
     volumes:
       - uploads-data:/app/uploads
     ports:

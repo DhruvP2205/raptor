@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto';
+import { createHash, createHmac, randomBytes } from 'crypto';
 
 // Fast SHA-256, not argon2, for hashing high-entropy random tokens
 // (session tokens, email-verification tokens). Argon2 is for low
@@ -8,6 +8,14 @@ import { createHash, randomBytes } from 'crypto';
 // every request.
 export function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+// Keyed hash for LOW-entropy values (e.g. an IP address — only ~32 bits
+// for IPv4). Plain sha256Hex() would be reversible in seconds by just
+// hashing every possible input and building a lookup table; HMAC with a
+// server-only secret key is what actually makes it one-way in practice.
+export function hmacSha256Hex(value: string, key: string): string {
+  return createHmac('sha256', key).update(value).digest('hex');
 }
 
 export function generateRawToken(bytes = 32): string {

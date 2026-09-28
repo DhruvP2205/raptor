@@ -51,7 +51,7 @@ judge account, before any invitation has happened).
 | `id` | uuid | |
 | `userId` | fk → User | |
 | `tokenHash` | string, unique | Raw token is **never** stored — only its hash (D3) |
-| `userAgent`, `ipHash` | nullable | For a future "your active sessions" view |
+| `userAgent`, `ipHash` | nullable | For a future "your active sessions" view. `ipHash` is HMAC-keyed with `APP_SECRET` (D58), not a plain hash — an IP address is too low-entropy for an unkeyed hash to actually be one-way. `null` if `APP_SECRET` isn't configured, rather than a hash with no key. |
 | `expiresAt`, `revokedAt` | datetime | Revocation is instant — deleting/marking a row invalidates it immediately |
 
 ---

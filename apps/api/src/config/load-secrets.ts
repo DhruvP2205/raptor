@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'fs';
 
-// Reads the SMTP-credentials Docker Compose secret (mounted at
-// /run/secrets/smtp_credentials, per docs/ARCHITECTURE.md Section 5)
+// Reads the SMTP-credentials and app-secret Docker Compose secrets
+// (mounted at /run/secrets/<name>, per docs/ARCHITECTURE.md Section 5)
 // into process.env at process startup, before any other module can read
-// it. Must be called as the first statement in main.ts.
+// them. Must be called as the first statement in main.ts.
 //
 // DATABASE_URL is deliberately NOT handled here. It's needed by two
 // separate OS processes in the runtime container — the `prisma migrate
@@ -38,6 +38,13 @@ export function loadSecrets(): void {
       if (!process.env[key]) {
         process.env[key] = trimmed.slice(eq + 1).trim();
       }
+    }
+  }
+
+  if (!process.env.APP_SECRET) {
+    const appSecret = readSecret('app_secret');
+    if (appSecret) {
+      process.env.APP_SECRET = appSecret;
     }
   }
 }
