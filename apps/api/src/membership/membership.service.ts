@@ -12,6 +12,7 @@ import { AuditService } from '../audit/audit.service';
 import { generateRawToken, sha256Hex } from '../common/crypto.util';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
+import type { UpdateJudgeMembershipDto } from './dto/update-judge-membership.dto';
 
 // invitationTokenHash is internal security material — even though it's
 // a one-way hash and not directly exploitable, there's no consumer need
@@ -362,6 +363,67 @@ export class MembershipService {
       orderBy: { createdAt: 'asc' },
     });
     return rows.map(toPublicMembership);
+  }
+
+  // Module 7's mechanics for the two fields Module 2 deferred — see
+  // docs/stages/07-judge-assignment.md Sections 4/7. Any ACCEPTED or
+  // PENDING judge membership can be updated (an organizer may want to
+  // pre-scope tracks before a judge even accepts).
+  async updateJudgeMembership(
+    eventId: string,
+    membershipId: string,
+    actingUserId: string,
+    dto: UpdateJudgeMembershipDto,
+  ): Promise<Omit<EventMembership, 'invitationTokenHash'>> {
+    const membership = await this.prisma.eventMembership.findUnique({
+      where: { id: membershipId },
+    });
+    if (!membership || membership.eventId !== eventId) {
+      throw new NotFoundException({
+        code: 'MEMBERSHIP_NOT_FOUND',
+        message: 'No such membership on this event.',
+      });
+    }
+    if (membership.role !== 'JUDGE') {
+      throw new BadRequestException({
+        code: 'NOT_A_JUDGE',
+        message: 'trackIds/projectLimitOverride only apply to judge memberships.',
+      });
+    }
+
+    if (dto.trackIds !== undefined && dto.trackIds.length > 0) {
+      const count = await this.prisma.track.count({
+        where: { id: { in: dto.trackIds }, eventId },
+      });
+      if (count !== new Set(dto.trackIds).size) {
+        throw new BadRequestException({
+          code: 'TRACK_NOT_ON_EVENT',
+          message: 'One or more selected tracks do not belong to this event.',
+        });
+      }
+    }
+
+    const updated = await this.prisma.eventMembership.update({
+      where: { id: membershipId },
+      data: {
+        ...(dto.trackIds !== undefined ? { trackIds: dto.trackIds } : {}),
+        ...(dto.projectLimitOverride !== undefined
+          ? { projectLimitOverride: dto.projectLimitOverride }
+          : {}),
+      },
+    });
+
+    await this.audit.record(actingUserId, 'JUDGE_MEMBERSHIP_UPDATED', {
+      eventId,
+      membershipId,
+      judgeUserId: membership.userId,
+      ...(dto.trackIds !== undefined ? { trackIds: dto.trackIds } : {}),
+      ...(dto.projectLimitOverride !== undefined
+        ? { projectLimitOverride: dto.projectLimitOverride }
+        : {}),
+    });
+
+    return toPublicMembership(updated);
   }
 
   // Shared by inviteJudgeDirect (first invite) and resendInvitation

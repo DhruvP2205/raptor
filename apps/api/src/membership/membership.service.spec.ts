@@ -18,6 +18,9 @@ function makePrisma() {
       updateMany: jest.fn(),
       findMany: jest.fn(),
     },
+    track: {
+      count: jest.fn(),
+    },
   };
 }
 
@@ -411,6 +414,84 @@ describe('MembershipService', () => {
       // The nested user object (a legitimate, intentional field) must
       // survive the sanitization untouched.
       expect(result[0].user).toEqual({ id: 'u1', email: 'a@example.com', displayName: 'A' });
+    });
+  });
+
+  describe('updateJudgeMembership', () => {
+    it('rejects updating a non-JUDGE membership', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue({
+        id: 'm1',
+        eventId: 'event-1',
+        role: 'ORGANIZER',
+      });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      await expect(
+        service.updateJudgeMembership('event-1', 'm1', 'organizer-1', { trackIds: ['t1'] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('404s for a membership belonging to a different event', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue({
+        id: 'm1',
+        eventId: 'OTHER_EVENT',
+        role: 'JUDGE',
+      });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      await expect(
+        service.updateJudgeMembership('event-1', 'm1', 'organizer-1', { trackIds: ['t1'] }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('rejects trackIds naming a track that does not belong to this event', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue({
+        id: 'm1',
+        eventId: 'event-1',
+        role: 'JUDGE',
+        userId: 'judge-1',
+      });
+      prisma.track.count.mockResolvedValue(0);
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      await expect(
+        service.updateJudgeMembership('event-1', 'm1', 'organizer-1', { trackIds: ['not-on-event'] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.eventMembership.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts a valid trackIds update and an explicit null projectLimitOverride', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue({
+        id: 'm1',
+        eventId: 'event-1',
+        role: 'JUDGE',
+        userId: 'judge-1',
+      });
+      prisma.track.count.mockResolvedValue(1);
+      prisma.eventMembership.update.mockResolvedValue({
+        id: 'm1',
+        eventId: 'event-1',
+        role: 'JUDGE',
+        trackIds: ['t1'],
+        projectLimitOverride: null,
+        invitationTokenHash: null,
+      });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.updateJudgeMembership('event-1', 'm1', 'organizer-1', {
+        trackIds: ['t1'],
+        projectLimitOverride: null,
+      });
+
+      expect(prisma.eventMembership.update).toHaveBeenCalledWith({
+        where: { id: 'm1' },
+        data: { trackIds: ['t1'], projectLimitOverride: null },
+      });
+      expect(result).not.toHaveProperty('invitationTokenHash');
     });
   });
 });

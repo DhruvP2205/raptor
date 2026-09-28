@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { EventRole, type User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireEventRole } from '../authz/decorators/require-event-role.decorator';
@@ -6,6 +6,7 @@ import { EventRoleGuard } from '../authz/guards/event-role.guard';
 import { AddOrganizerDto } from './dto/add-organizer.dto';
 import { InviteJudgeDto } from './dto/invite-judge.dto';
 import { RespondToInvitationDto } from './dto/respond-to-invitation.dto';
+import { UpdateJudgeMembershipDto } from './dto/update-judge-membership.dto';
 import { MembershipService } from './membership.service';
 
 @Controller()
@@ -50,6 +51,18 @@ export class MembershipController {
     @CurrentUser() user: User,
   ) {
     return this.membership.resendInvitation(eventId, membershipId, user.id);
+  }
+
+  @Patch('events/:eventId/judges/:membershipId')
+  @RequireEventRole(EventRole.ORGANIZER)
+  @UseGuards(EventRoleGuard)
+  updateJudgeMembership(
+    @Param('eventId') eventId: string,
+    @Param('membershipId') membershipId: string,
+    @CurrentUser() user: User,
+    @Body() dto: UpdateJudgeMembershipDto,
+  ) {
+    return this.membership.updateJudgeMembership(eventId, membershipId, user.id, dto);
   }
 
   // Not event-scoped by path — the token itself determines which

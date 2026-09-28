@@ -74,6 +74,16 @@ model User {
   // finalDecision. Nullable on the other side (most SubmissionVerification
   // rows are never manually reviewed at all, e.g. auto-VERIFIED ones).
   verificationReviews SubmissionVerification[] @relation("VerificationReviewer")
+
+  // Module 7 — projects this user, as a judge, has been assigned to.
+  judgeAssignments JudgeAssignment[] @relation("AssignmentJudge")
+
+  // Reliability notes about this user (as the judge the incident is
+  // about) vs. notes this user has authored (as the organizer/admin who
+  // wrote one about someone else) are two entirely different relations
+  // on the same table — Section 5, docs/stages/07-judge-assignment.md.
+  reliabilityNotesAbout    JudgeReliabilityNote[] @relation("ReliabilityNoteSubject")
+  reliabilityNotesAuthored JudgeReliabilityNote[] @relation("ReliabilityNoteAuthor")
 }
 
 model Session {
@@ -141,6 +151,18 @@ model Event {
   // field at all, rather than a form that silently requires one.
   trackAttachmentMode TrackAttachmentMode @default(NONE)
 
+  // Module 7's field (Judge Assignment) — event-wide default cap on how
+  // many projects a single judge can be assigned, referenced by both
+  // manual and algorithmic assignment (Section 3/4,
+  // docs/stages/07-judge-assignment.md). A per-judge
+  // EventMembership.projectLimitOverride can raise or lower this for one
+  // judge. Defaults to 20 — an inferred default (not stated by the
+  // doc), generous enough to rarely block a small event's first
+  // assignment pass while still being a real, visible cap rather than
+  // effectively unbounded; same "additive field, sensible default"
+  // precedent as maxTeamSize (D75).
+  maxProjectsPerJudge Int @default(20)
+
   // Timeline — all required at creation (Section 3.3's ordering chain
   // can't be validated against a partially-set timeline). UTC.
   registrationOpensAt    DateTime
@@ -162,6 +184,13 @@ model Event {
   prizes      Prize[]
   teams       Team[]
   submissions Submission[]
+
+  judgeAssignments JudgeAssignment[]
+
+  // Module 7 — context-only relation (the note itself is platform-wide
+  // on the judge's User, not scoped by this relation — Section 5,
+  // docs/stages/07-judge-assignment.md).
+  judgeReliabilityNotes JudgeReliabilityNote[]
 }
 
 enum EventStatus {
@@ -250,6 +279,12 @@ model EventMembership {
   // by track are explicitly out of scope until judge assignment
   // (Module 7+) — see Section 1's "Explicitly not in this stage."
   trackIds String[] @default([])
+
+  // Module 7 — per-judge override of Event.maxProjectsPerJudge, set
+  // explicitly by an organizer when a manual assignment would otherwise
+  // exceed the event-wide default (Section 3,
+  // docs/stages/07-judge-assignment.md). null = use the event default.
+  projectLimitOverride Int?
 
   // ACCEPTED immediately for organizer rows (D12, docs/DECISIONS.md) —
   // there's no consent step for an already-vetted organizer account.
@@ -391,6 +426,12 @@ model Submission {
   // (NOT_RUN default) rather than backfilled for every existing row.
   verification SubmissionVerification?
 
+  // Module 7 — zero or more judges assigned once finalDecision =
+  // APPROVED (Section 2, docs/stages/07-judge-assignment.md). The
+  // normal case is several (the brief's own example is 3 reviews per
+  // project), so this is a list, unlike verification's 1:1.
+  judgeAssignments JudgeAssignment[]
+
   // NULLs are distinct under Postgres's default unique-index semantics,
   // so this only constrains actual (eventId, soloUserId) pairs — it
   // doesn't limit how many TEAM rows (soloUserId always null) an event
@@ -504,6 +545,83 @@ model GithubToken {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Module 7 (Judge Assignment) — see
+// docs/stages/07-judge-assignment.md. Decides *who* reviews *what*, not
+// scoring itself (Module 8). submissionId is intentionally not unique —
+// a project normally has several judges (Section 3).
+model JudgeAssignment {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  judgeId String
+  judge   User   @relation("AssignmentJudge", fields: [judgeId], references: [id])
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // COMPLETED is permanent (Section 5) — no further transition once
+  // reached, enforced at the application layer (nothing in the schema
+  // itself can express "this enum value, once set, is final"). Module 8
+  // is what actually drives IN_PROGRESS/COMPLETED; this module only ever
+  // writes PENDING (on create) and TRANSFERRED (on transfer).
+  status AssignmentStatus @default(PENDING)
+
+  // Audit/provenance only (Section 4) — no downstream code branches on
+  // this value.
+  assignmentMethod AssignmentMethod
+
+  // Set on the *new* row created by a transfer, pointing back at the
+  // TRANSFERRED row it replaced (Section 5). Self-relation, so Prisma
+  // needs an explicit disambiguating name even though only one side
+  // (this fk) is ever populated — the reverse list is never queried by
+  // name, just useful for referential integrity.
+  transferredFromAssignmentId String?           @unique
+  transferredFromAssignment   JudgeAssignment?  @relation("AssignmentTransfer", fields: [transferredFromAssignmentId], references: [id])
+  transferredToAssignment     JudgeAssignment?  @relation("AssignmentTransfer")
+
+  assignedAt  DateTime  @default(now())
+  completedAt DateTime?
+}
+
+enum AssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  TRANSFERRED
+}
+
+enum AssignmentMethod {
+  MANUAL
+  ALGORITHMIC
+}
+
+// Module 7 — platform-wide, not event-scoped (Section 5). Never visible
+// to the judge themselves or to any participant; visible to any
+// organizer/admin viewing this judge's profile on any event, including
+// ones unrelated to eventId below.
+model JudgeReliabilityNote {
+  id String @id @default(uuid())
+
+  judgeUserId String
+  judgeUser   User   @relation("ReliabilityNoteSubject", fields: [judgeUserId], references: [id], onDelete: Cascade)
+
+  // Context only — which event this incident occurred during. The note
+  // itself is never scoped or filtered by this field.
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  authorUserId String
+  author       User   @relation("ReliabilityNoteAuthor", fields: [authorUserId], references: [id])
+
+  remark String
+
+  createdAt DateTime @default(now())
+
+  @@index([judgeUserId])
 }
 
 // Append-only. Every privileged or destructive action writes here —

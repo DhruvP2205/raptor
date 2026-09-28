@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AdminModule } from './admin/admin.module';
 import { AppController } from './app.controller';
+import { AssignmentsModule } from './assignments/assignments.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
@@ -37,6 +38,7 @@ import { VerificationModule } from './verification/verification.module';
     TeamsModule,
     SubmissionsModule,
     VerificationModule,
+    AssignmentsModule,
   ],
   controllers: [AppController],
 })

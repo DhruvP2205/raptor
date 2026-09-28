@@ -48,6 +48,15 @@ export class UpdateEventDto {
   @IsEnum(TrackAttachmentMode)
   trackAttachmentMode?: TrackAttachmentMode;
 
+  // Lowering this below an already-assigned judge's current load
+  // doesn't retroactively unassign anything — same "block future, don't
+  // retroactively enforce" precedent as maxTeamSize above.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  maxProjectsPerJudge?: number;
+
   @IsOptional()
   @IsISO8601()
   registrationOpensAt?: string;

@@ -3,29 +3,31 @@
 The schema, table by table, and why each field exists. This is the
 human-readable narrative version of `apps/api/prisma/schema.prisma`.
 
-**Status note:** the schema described below is the cumulative target —
-every decision locked through Module 5 (Submission Management).
+**Status note:** the schema described below is the cumulative target.
 `apps/api/prisma/schema.prisma` is built up **incrementally, stage by
 stage**, matching each stage doc's own declared scope. **Modules 1
-through 5 are all implemented** (`User`, `Session`, `EventMembership`,
-`AuditLog`, the full `Event` table including `maxTeamSize` and
-`trackAttachmentMode`, `Track`, `Prize`, `Team`, `TeamMembership`, the
-full `Submission` table). `Event` started as a deliberately minimal
+through 7 are all implemented** (`User`, `Session`, `EventMembership`,
+`AuditLog`, the full `Event` table including `maxTeamSize`,
+`trackAttachmentMode`, and `maxProjectsPerJudge`, `Track`, `Prize`,
+`Team`, `TeamMembership`, the full `Submission` table,
+`SubmissionVerification`, `GithubToken`, `JudgeAssignment`,
+`JudgeReliabilityNote`). `Event` started as a deliberately minimal
 anchor in Module 2 (D59) and Module 3 grew it additively to the full
 shape below; Module 4 added `maxTeamSize` the same way (D75), Module 5
-added `trackAttachmentMode` (D75-equivalent pattern, same commit).
+added `trackAttachmentMode` (D75-equivalent pattern, same commit),
+Module 7 added `maxProjectsPerJudge` the same way again.
 `Submission` started as a minimal anchor in Module 4 — `id`, `teamId`,
 `everSubmitted`, `createdAt` (D75) — and Module 5 extended it additively
 to the full shape below, per its own scope. `eventClosedAt` is still
-deliberately absent (voting, no locked stage doc yet). **Modules 6-10
-(Submission Verification through Results & Rankings) have locked stage
-docs as of this update but are not yet implemented** — §6-10 below
-describe their target schema; nothing there exists in the live schema
-yet. Module 8 additively requires one new field on the already
--implemented `Event` table, `judgingClosesAt` (§3) — everything else in
-§6-10 is entirely new tables. If the live schema and a field documented
-here disagree **and the owning module has already been implemented**,
-that's a bug. Certificates and voting are discussed extensively in
+deliberately absent (voting, no locked stage doc yet). **Modules 8-10
+(Rubric & Scoring through Results & Rankings) have locked stage docs as
+of this update but are not yet implemented** — §8-10 below describe
+their target schema; nothing there exists in the live schema yet.
+Module 8 additively requires one new field on the already-implemented
+`Event` table, `judgingClosesAt` (§3) — everything else in §8-10 is
+entirely new tables. If the live schema and a field documented here
+disagree **and the owning module has already been implemented**, that's
+a bug. Certificates and voting are discussed extensively in
 `DECISIONS.md` but don't have a finalized stage doc yet, so their tables
 are sketched here as forward-looking and may still shift.
 
@@ -80,7 +82,8 @@ is ever consulted for event-scoped actions.
 | `userId` | fk → User | |
 | `eventId` | fk → Event | |
 | `role` | enum: `PARTICIPANT \| JUDGE \| ORGANIZER` | Must match the user's `accountType` — a `PARTICIPANT`-track account can never hold a `JUDGE`/`ORGANIZER` membership row, enforced at the application layer |
-| `trackIds` | string[] | Empty = all tracks (judge track-scoping) |
+| `trackIds` | string[] | Empty = all tracks. The field existed from Module 2; the mechanics of actually scoping assignment by it **arrived with Module 7** (`PATCH /events/:id/judges/:membershipId`) |
+| `projectLimitOverride` | int, nullable | **Implemented (Module 7).** Per-judge override of `Event.maxProjectsPerJudge`; `null` = use the event default |
 | `invitationStatus` | enum: `ACCEPTED \| PENDING \| DECLINED \| EXPIRED` | `ACCEPTED` immediately for organizer rows (D12); starts `PENDING` for judge rows |
 | `invitedByUserId` | fk → User, nullable | |
 | `invitedAt`, `respondedAt` | datetime, nullable | |
@@ -96,10 +99,11 @@ is ever consulted for event-scoped actions.
 **Implemented (Module 3), grown additively by later modules** — same
 principle as `Event` itself starting as a minimal anchor (D59):
 `maxTeamSize` arrived with Module 4 (D75), `trackAttachmentMode` with
-Module 5. `eventClosedAt` is still absent — it's only used by
-voting-round-restart logic, which has no locked stage doc yet.
-`judgingClosesAt` will arrive with Module 8 (not yet implemented — see
-the table row below). `phase` adds a synthetic `NOT_STARTED` value
+Module 5, `maxProjectsPerJudge` with Module 7. `eventClosedAt` is still
+absent — it's only used by voting-round-restart logic, which has no
+locked stage doc yet. `judgingClosesAt` will arrive with Module 8 (not
+yet implemented — see the table row below). `phase` adds a synthetic
+`NOT_STARTED` value
 (D69) for a PUBLISHED event sitting before `registrationOpensAt`, not
 named in the stage doc's own phase list but required by its explicit
 "early hype, before registration opens" supported use case (Section 8).
@@ -113,6 +117,7 @@ named in the stage doc's own phase list but required by its explicit
 | `trackAttachmentMode` | enum: `NONE \| SINGLE \| MULTIPLE`, default `NONE` | **Implemented (Module 5).** Drives the submission form's track UI (Section 4, docs/stages/05-submission-management.md) |
 | ~~`minTeamSize`~~ | — | No such field; a team can be admin-only (D25) |
 | `maxTeamSize` | int, default 4 | **Implemented (Module 4, D75).** Admin counts toward the total (D25) |
+| `maxProjectsPerJudge` | int, default 20 | **Implemented (Module 7).** Event-wide cap referenced by both manual and algorithmic assignment; a per-judge `EventMembership.projectLimitOverride` can override it. Default is an inferred value, not stated by the stage doc — see the schema's own comment |
 | Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`. (`eventClosedAt` not yet implemented — voting's field, no locked stage doc.) |
 | `judgingClosesAt` | timestamptz, UTC | **Not yet implemented** — Module 8's field (§8 below). Once built, sits between `eventEndsAt` and `resultsAnnounceAt` in the ordering chain; Module 3's own code (`event-timeline.ts`, `event-phase.ts`) needs updating to add it and the new `JUDGING_CLOSED` phase — this is the one place a later module amends an earlier, already-shipped one, per Module 8 Section 10. |
 | *(computed, not stored)* `phase` | `EventPhase \| null` | Derived from `now()` vs. the timeline fields on every read (D15); `null` for non-PUBLISHED, `NOT_STARTED` for PUBLISHED-but-pre-registration (D69). Does not yet include `JUDGING_CLOSED` — arrives with Module 8. |
@@ -230,6 +235,8 @@ custom-questions module is designed.
 
 ## 6. Submission Verification (Module 6)
 
+**Implemented.**
+
 ### `SubmissionVerification`
 
 | Field | Type | Notes |
@@ -255,6 +262,8 @@ custom-questions module is designed.
 ---
 
 ## 7. Judge Assignment (Module 7)
+
+**Implemented.**
 
 ### `JudgeAssignment`
 

@@ -83,6 +83,9 @@ export class EventsService {
         ...(dto.trackAttachmentMode !== undefined
           ? { trackAttachmentMode: dto.trackAttachmentMode }
           : {}),
+        ...(dto.maxProjectsPerJudge !== undefined
+          ? { maxProjectsPerJudge: dto.maxProjectsPerJudge }
+          : {}),
         ...timeline,
       },
     });
@@ -144,6 +147,9 @@ export class EventsService {
         ...(dto.maxTeamSize !== undefined ? { maxTeamSize: dto.maxTeamSize } : {}),
         ...(dto.trackAttachmentMode !== undefined
           ? { trackAttachmentMode: dto.trackAttachmentMode }
+          : {}),
+        ...(dto.maxProjectsPerJudge !== undefined
+          ? { maxProjectsPerJudge: dto.maxProjectsPerJudge }
           : {}),
         ...timelineUpdates,
       },

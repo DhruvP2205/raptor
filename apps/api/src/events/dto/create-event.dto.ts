@@ -48,6 +48,14 @@ export class CreateEventDto {
   @IsEnum(TrackAttachmentMode)
   trackAttachmentMode?: TrackAttachmentMode;
 
+  // Module 7's field (Judge Assignment) — same additive-field precedent
+  // as maxTeamSize/trackAttachmentMode above. Defaults to 20 if omitted.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  maxProjectsPerJudge?: number;
+
   @IsISO8601()
   registrationOpensAt!: string;
 
