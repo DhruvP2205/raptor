@@ -47,4 +47,15 @@ export function loadSecrets(): void {
       process.env.APP_SECRET = appSecret;
     }
   }
+
+  // Module 6 (Submission Verification) — see docs/DECISIONS.md D96.
+  // Read the same way as app_secret: this process is the one that
+  // encrypts a GitHub PAT on admin entry (apps/worker reads the same
+  // secret independently to decrypt before calling the GitHub API).
+  if (!process.env.GITHUB_TOKEN_KEY) {
+    const githubTokenKey = readSecret('github_token_key');
+    if (githubTokenKey) {
+      process.env.GITHUB_TOKEN_KEY = githubTokenKey;
+    }
+  }
 }

@@ -11,6 +11,7 @@
   "scripts": {
     "dev:api": "pnpm --filter @raptor/api dev",
     "dev:web": "pnpm --filter @raptor/web dev",
+    "dev:worker": "pnpm --filter @raptor/worker dev",
     "build": "pnpm -r build",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down"

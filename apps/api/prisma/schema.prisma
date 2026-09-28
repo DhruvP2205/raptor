@@ -69,6 +69,11 @@ model User {
   adminOfTeams    Team[]           @relation("TeamAdmin")
   teamMemberships TeamMembership[]
   soloSubmissions Submission[]
+
+  // Module 6 — organizer/admin who resolved a verification's
+  // finalDecision. Nullable on the other side (most SubmissionVerification
+  // rows are never manually reviewed at all, e.g. auto-VERIFIED ones).
+  verificationReviews SubmissionVerification[] @relation("VerificationReviewer")
 }
 
 model Session {
@@ -382,6 +387,10 @@ model Submission {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Module 6 — one verification record per submission, created lazily
+  // (NOT_RUN default) rather than backfilled for every existing row.
+  verification SubmissionVerification?
+
   // NULLs are distinct under Postgres's default unique-index semantics,
   // so this only constrains actual (eventId, soloUserId) pairs — it
   // doesn't limit how many TEAM rows (soloUserId always null) an event
@@ -392,6 +401,109 @@ model Submission {
 enum SubmissionType {
   SOLO
   TEAM
+}
+
+// Module 6 (Submission Verification) — see
+// docs/stages/06-submission-verification.md. One row per Submission,
+// overwritten on re-run (D101) — this is the current state, not a
+// history log; ScoreRevision-style immutable snapshots aren't needed
+// here because nothing downstream depends on a specific past run the
+// way judging depends on past score submissions.
+model SubmissionVerification {
+  id String @id @default(uuid())
+
+  submissionId String     @unique
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // What the automated check found (or NOT_RUN if it hasn't run yet).
+  // Deliberately separate from finalDecision (Section 4) — VERIFIED is
+  // the only value that auto-resolves finalDecision; every other value
+  // requires an explicit human action (D93, D94).
+  checkStatus CheckStatus @default(NOT_RUN)
+
+  // What actually gates Module 7's judge assignment. Never set directly
+  // by the automated check except the one VERIFIED -> APPROVED path.
+  finalDecision FinalDecision @default(PENDING_REVIEW)
+
+  firstCommitAt DateTime?
+  lastCommitAt  DateTime?
+
+  totalCommits    Int @default(0)
+  commitsInWindow Int @default(0)
+
+  // Full sha/timestamp/message/author detail for every commit outside
+  // [eventStartsAt, submissionsCloseAt] (Section 3.4) — retained for the
+  // manual-review UI, never discarded down to just a count.
+  outsideWindowCommits Json @default("[]")
+
+  // Mandatory (enforced at the application layer, not the schema —
+  // same pattern as every other conditionally-required field in this
+  // project) when finalDecision = DISQUALIFIED (D99). Optional for an
+  // APPROVED override.
+  finalDecisionRemarks String?
+
+  reviewedByUserId String?
+  reviewedBy       User?   @relation("VerificationReviewer", fields: [reviewedByUserId], references: [id])
+
+  checkedAt  DateTime?
+  reviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum CheckStatus {
+  NOT_RUN
+  VERIFIED
+  SUSPICIOUS
+  REJECTED
+  PRIVATE
+  NON_GITHUB
+  ERROR
+}
+
+enum FinalDecision {
+  PENDING_REVIEW
+  APPROVED
+  DISQUALIFIED
+}
+
+// Module 6's one deliberate exception to "never store a reversible
+// secret" (D96) — a GitHub PAT must be read back in plaintext to call
+// the GitHub API, unlike every hashed, compare-only token elsewhere in
+// this schema. Admin-managed only (Section 5); never surfaced to
+// organizers.
+model GithubToken {
+  id String @id @default(uuid())
+
+  // AES-256-GCM ciphertext (iv + authTag + ciphertext, see
+  // apps/worker's crypto helper) — the encryption key itself lives only
+  // in the GITHUB_TOKEN_KEY env var, sourced from a Docker secret, never
+  // in this table.
+  tokenEncrypted String
+
+  // Admin-facing name, e.g. "Token A - org bot account" — tokens are
+  // never identified to anyone by their value.
+  label String
+
+  // Flipped to false the moment a call using this token fails auth
+  // (expired/revoked on GitHub's side) — excluded from rotation from
+  // that point on and surfaced as an admin-dashboard alert (D97), never
+  // a silent failure.
+  isValid Boolean @default(true)
+
+  // Read from GitHub's rate-limit response headers after every call.
+  // Rotation picks whichever valid, non-revoked token currently has the
+  // most headroom; a token past its rateLimitResetAt with 0 remaining is
+  // skipped until that time passes.
+  rateLimitRemaining Int?
+  rateLimitResetAt   DateTime?
+
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // Append-only. Every privileged or destructive action writes here —

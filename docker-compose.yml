@@ -19,6 +19,8 @@ secrets:
     file: ./secrets/smtp_credentials.txt
   app_secret:
     file: ./secrets/app_secret.txt
+  github_token_key:
+    file: ./secrets/github_token_key.txt
 
 services:
   postgres:
@@ -70,10 +72,37 @@ services:
       - postgres_password
       - smtp_credentials
       - app_secret
+      - github_token_key
     volumes:
       - uploads-data:/app/uploads
     ports:
       - "4000:4000"
+
+  # Module 6 (Submission Verification) — see docs/ARCHITECTURE.md
+  # Section 4 and docs/stages/06-submission-verification.md Section 6.
+  # Runs BullMQ against the same Redis instance as the api's rate
+  # limiter; never publishes a port, never talked to directly by `web`.
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    restart: unless-stopped
+    networks:
+      - app-net
+      - data-net
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      NODE_ENV: production
+      POSTGRES_USER: raptor
+      POSTGRES_DB: raptor
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379
+    secrets:
+      - postgres_password
+      - github_token_key
 
   web:
     build:
