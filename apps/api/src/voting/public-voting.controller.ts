@@ -1,4 +1,7 @@
 import { Controller, Get, Param } from '@nestjs/common';
+import type { User } from '@prisma/client';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { VotingResultsService } from './voting-results.service';
 import { VotingService } from './voting.service';
@@ -27,5 +30,17 @@ export class PublicVotingController {
   @Public()
   getResults(@Param('eventId') eventId: string) {
     return this.results.getPublicResults(eventId);
+  }
+
+  // OptionalAuth, not @Public() — @Public() skips session resolution
+  // entirely (req.user is never set, even with a valid cookie), which
+  // would make every signed-in visitor look signed-out here. This route
+  // genuinely needs "resolve the session if one exists, but don't
+  // reject the request if it doesn't" — see VotingService.getMyEligibility's
+  // own comment for why the route exists at all.
+  @Get('my-eligibility')
+  @OptionalAuth()
+  getMyEligibility(@Param('eventId') eventId: string, @CurrentUser() user: User | undefined) {
+    return this.voting.getMyEligibility(eventId, user ?? null);
   }
 }

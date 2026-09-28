@@ -18,6 +18,11 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           Create event
         </Link>
       )}
+      {user && (
+        <Link href={`/users/${user.id}`} onClick={onNavigate} className="text-sm font-medium hover:text-accent">
+          My certificates
+        </Link>
+      )}
       {user?.siteAdmin && (
         <Link
           href="/admin/staff-accounts"

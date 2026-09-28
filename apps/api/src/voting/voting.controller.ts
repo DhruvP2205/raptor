@@ -40,9 +40,19 @@ export class VotingController {
     return this.voting.createInitialRound(eventId, user.id);
   }
 
+  @Get('rounds')
+  listRounds(@Param('eventId') eventId: string) {
+    return this.voting.listRounds(eventId);
+  }
+
   @Get('rounds/current')
   getCurrentRound(@Param('eventId') eventId: string) {
     return this.voting.getCurrentRound(eventId);
+  }
+
+  @Get('rounds/:roundId/shortlist')
+  getShortlistEntries(@Param('eventId') eventId: string, @Param('roundId') roundId: string) {
+    return this.voting.getShortlistEntries(eventId, roundId);
   }
 
   @Post('rounds/restart')

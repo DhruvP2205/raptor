@@ -81,6 +81,13 @@ export interface PublicEvent {
   votingClosesAt: string;
   votingWinnerAnnounceAt: string;
   eventClosedAt: string;
+  // Module 11 — organizer-chosen once, at event creation/before round 1
+  // exists; null until then (setEligibilityMode's own lock condition).
+  votingEligibilityMode: VotingEligibilityMode | null;
+  // Module 12 — the one-way switch; false until an organizer enables it
+  // (only possible once a PublishedResultVersion is LIVE).
+  certificatesEnabled: boolean;
+  certificatesEnabledAt: string | null;
   createdAt: string;
   updatedAt: string;
   phase: EventPhase | null;
@@ -484,6 +491,181 @@ export interface PublishedResultVersionSummary {
   publishedAt: string;
   correctionReason: string | null;
   unpublishReason: string | null;
+}
+
+// Module 11 (Voting) — see stages/11-voting.md.
+export type VotingEligibilityMode = 'PARTICIPANTS_ONLY' | 'VERIFIED_PLATFORM_USERS';
+export type VotingRoundStatus = 'ACTIVE' | 'SUPERSEDED' | 'DEACTIVATED';
+export type VoteAbuseFlagStatus = 'PENDING' | 'REVIEWED_CLEARED' | 'REVIEWED_BANNED';
+export type VotingResultVersionStatus = 'LIVE' | 'SUPERSEDED' | 'UNPUBLISHED';
+export type VotingCorrectionType = 'DISQUALIFY' | 'REASSIGN_CREDIT';
+
+export interface VotingRound {
+  id: string;
+  eventId: string;
+  roundNumber: number;
+  status: VotingRoundStatus;
+  votingOpensAt: string;
+  votingClosesAt: string;
+  votingWinnerAnnounceAt: string;
+  deactivatedAt: string | null;
+  deactivatedByUserId: string | null;
+  deactivationReason: string | null;
+  createdByUserId: string;
+  createdAt: string;
+}
+
+export interface ShortlistSuggestion {
+  submissionId: string;
+  title: string | null;
+  finalScore: number;
+  rank: number;
+}
+
+export interface ShortlistEntryRow {
+  id: string;
+  votingRoundId: string;
+  submissionId: string;
+  addedByUserId: string;
+  isAutoSuggested: boolean;
+  createdAt: string;
+  submission?: { id: string; title: string | null };
+}
+
+export interface PublicShortlist {
+  roundId: string;
+  roundNumber: number;
+  votingOpensAt: string;
+  votingClosesAt: string;
+  entries: ShortlistEntryRow[];
+}
+
+export interface VotingTallyEntry {
+  submissionId: string;
+  voteCount: number;
+  votePercentage: number;
+  isSharedWin: boolean;
+}
+
+export interface VoteAbuseFlag {
+  id: string;
+  votingRoundId: string;
+  ipHash: string;
+  implicatedUserIds: string[];
+  status: VoteAbuseFlagStatus;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface VotingResultEntry {
+  id: string;
+  votingResultVersionId: string;
+  submissionId: string;
+  voteCount: number;
+  votePercentage: number;
+  isSharedWin: boolean;
+  isDisqualified: boolean;
+  submission: { id: string; title: string | null } | null;
+}
+
+export interface VotingResultVersionSummary {
+  id: string;
+  eventId: string;
+  votingRoundId: string;
+  versionNumber: number;
+  status: VotingResultVersionStatus;
+  publishedByUserId: string;
+  publishedAt: string;
+  correctionReason: string | null;
+  unpublishReason: string | null;
+}
+
+export interface VotingResultVersion extends VotingResultVersionSummary {
+  entries: VotingResultEntry[];
+  // Derived, not persisted — see voting-results.service.ts's
+  // deriveCorrectedSubmissionId. Null on a non-correction version.
+  correctedSubmissionId: string | null;
+}
+
+export interface PowChallenge {
+  challengeId: string;
+  challenge: string;
+  difficultyBits: number;
+}
+
+export interface VotingCaptchaChallenge {
+  challengeId: string;
+  svg: string;
+}
+
+export type VotingIneligibleReason = 'NOT_SIGNED_IN' | 'ACCOUNT_TOO_NEW' | 'NOT_PARTICIPANT' | 'EMAIL_NOT_VERIFIED';
+
+export interface VotingEligibility {
+  eligible: boolean;
+  reason: VotingIneligibleReason | null;
+}
+
+// Module 12 (Certificates) — see stages/12-certificates.md.
+export type CertificateRole = 'PARTICIPANT' | 'JUDGE' | 'WINNER' | 'SPECIAL_AWARD_WINNER';
+
+export interface CertificateTemplate {
+  id: string;
+  eventId: string;
+  svgMarkup: string;
+  version: number;
+  createdAt: string;
+}
+
+// The raw Certificate row — returned by the self-service (generate/list
+// mine) and manual-issue routes. No svg/verified/canDownload on this
+// shape; those are computed only by the public view/gallery endpoints.
+export interface Certificate {
+  id: string;
+  eventId: string;
+  userId: string;
+  role: CertificateRole;
+  teamId: string | null;
+  submissionId: string | null;
+  payloadJson: CertificatePlaceholders;
+  signature: string;
+  publicKeyId: string;
+  templateId: string;
+  templateVersion: number;
+  issuedAt: string;
+}
+
+// Exactly the {{token}} substitution set svg-placeholder.util.ts
+// supports — also exactly the shape of Certificate.payloadJson.
+export interface CertificatePlaceholders {
+  recipientName: string;
+  eventName: string;
+  role: string;
+  projectName: string | null;
+  teamName: string | null;
+  issuedDate: string;
+  certificateId: string;
+  verifyUrl: string;
+}
+
+// GET /certificates/:id — public view response.
+export interface PublicCertificate extends CertificatePlaceholders {
+  certificateId: string;
+  svg: string;
+  verified: boolean;
+  // Derived server-side from the viewer's own session (if any) via the
+  // same check the real download route enforces — lets the frontend
+  // show the Download button as disabled-with-explanation instead of
+  // guessing and getting a 403 (design/12-certificates.md Section 2).
+  canDownload: boolean;
+}
+
+// GET /users/:userId/certificates — public gallery entry.
+export interface GalleryCertificate extends CertificatePlaceholders {
+  certificateId: string;
+  role: CertificateRole;
+  issuedAt: string;
+  event: { id: string; name: string; slug: string };
 }
 
 export interface ApiErrorBody {

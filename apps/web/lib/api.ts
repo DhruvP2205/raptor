@@ -27,6 +27,24 @@ import type {
   RubricCriterion,
   RubricCriterionKind,
   ScoringData,
+  PowChallenge,
+  PublicShortlist,
+  ShortlistSuggestion,
+  ShortlistEntryRow,
+  VoteAbuseFlag,
+  VotingCaptchaChallenge,
+  VotingCorrectionType,
+  VotingEligibility,
+  VotingEligibilityMode,
+  VotingResultVersion,
+  VotingResultVersionSummary,
+  VotingRound,
+  VotingTallyEntry,
+  Certificate,
+  CertificateRole,
+  CertificateTemplate,
+  GalleryCertificate,
+  PublicCertificate,
   VerificationRow,
   ApiErrorBody,
 } from '@raptor/shared';
@@ -577,4 +595,188 @@ export function createResultCorrection(
 // deliberately separate PublicResultsController.
 export function getPublicResults(eventId: string) {
   return apiFetch<PublishedResultVersion | null>(`/events/${eventId}/results`);
+}
+
+// --- Voting (Module 11) — organizer routes ---
+
+export function setVotingEligibilityMode(eventId: string, mode: VotingEligibilityMode) {
+  return apiFetch<{ votingEligibilityMode: VotingEligibilityMode }>(`/events/${eventId}/voting/eligibility-mode`, {
+    method: 'POST',
+    body: { mode },
+  });
+}
+
+export function createInitialVotingRound(eventId: string) {
+  return apiFetch<VotingRound>(`/events/${eventId}/voting/rounds`, { method: 'POST' });
+}
+
+export function listVotingRounds(eventId: string) {
+  return apiFetch<VotingRound[]>(`/events/${eventId}/voting/rounds`);
+}
+
+export function getCurrentVotingRound(eventId: string) {
+  return apiFetch<VotingRound>(`/events/${eventId}/voting/rounds/current`);
+}
+
+export function restartVotingRound(
+  eventId: string,
+  input: { reason: string; votingOpensAt: string; votingClosesAt: string; votingWinnerAnnounceAt: string },
+) {
+  return apiFetch<VotingRound>(`/events/${eventId}/voting/rounds/restart`, { method: 'POST', body: input });
+}
+
+export function getShortlistSuggestions(eventId: string, normalizationRunId?: string) {
+  const query = normalizationRunId ? `?normalizationRunId=${encodeURIComponent(normalizationRunId)}` : '';
+  return apiFetch<ShortlistSuggestion[]>(`/events/${eventId}/voting/shortlist/suggestions${query}`);
+}
+
+export function getShortlistEntries(eventId: string, roundId: string) {
+  return apiFetch<ShortlistEntryRow[]>(`/events/${eventId}/voting/rounds/${roundId}/shortlist`);
+}
+
+export function finalizeShortlist(eventId: string, roundId: string, submissionIds: string[]) {
+  return apiFetch<ShortlistEntryRow[]>(`/events/${eventId}/voting/rounds/${roundId}/shortlist`, {
+    method: 'POST',
+    body: { submissionIds },
+  });
+}
+
+export function correctShortlistEntry(
+  eventId: string,
+  roundId: string,
+  entryId: string,
+  input: { newSubmissionId: string; reason: string },
+) {
+  return apiFetch<ShortlistEntryRow>(`/events/${eventId}/voting/rounds/${roundId}/shortlist/${entryId}/corrections`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export function getLiveTally(eventId: string, roundId: string) {
+  return apiFetch<VotingTallyEntry[]>(`/events/${eventId}/voting/rounds/${roundId}/tally`);
+}
+
+export function listAbuseFlags(eventId: string) {
+  return apiFetch<VoteAbuseFlag[]>(`/events/${eventId}/voting/abuse-flags`);
+}
+
+export function reviewAbuseFlag(
+  eventId: string,
+  flagId: string,
+  input: { action: 'CLEAR' | 'BAN'; banReason?: string; banUserIds?: string[]; clearNote?: string },
+) {
+  return apiFetch<VoteAbuseFlag>(`/events/${eventId}/voting/abuse-flags/${flagId}/review`, { method: 'POST', body: input });
+}
+
+export function publishVotingResults(eventId: string) {
+  return apiFetch<VotingResultVersion>(`/events/${eventId}/voting/results/publish`, { method: 'POST', body: { confirm: true } });
+}
+
+export function listVotingResultVersions(eventId: string) {
+  return apiFetch<VotingResultVersionSummary[]>(`/events/${eventId}/voting/results/versions`);
+}
+
+export function getVotingResultVersionDetail(eventId: string, versionId: string) {
+  return apiFetch<VotingResultVersion>(`/events/${eventId}/voting/results/versions/${versionId}`);
+}
+
+export function unpublishVotingResults(eventId: string, versionId: string, reason: string) {
+  return apiFetch<VotingResultVersionSummary>(`/events/${eventId}/voting/results/versions/${versionId}/unpublish`, {
+    method: 'POST',
+    body: { reason },
+  });
+}
+
+export function createVotingCorrection(
+  eventId: string,
+  versionId: string,
+  input: { type: VotingCorrectionType; submissionId: string; reason: string; newSubmissionId?: string },
+) {
+  return apiFetch<VotingResultVersion>(`/events/${eventId}/voting/results/versions/${versionId}/corrections`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+// --- Voting (Module 11) — public routes ---
+
+export function getPublicShortlist(eventId: string) {
+  return apiFetch<PublicShortlist | null>(`/events/${eventId}/voting/shortlist`);
+}
+
+export function getPublicVotingResults(eventId: string) {
+  return apiFetch<VotingResultVersion | null>(`/events/${eventId}/voting/results`);
+}
+
+export function getMyVotingEligibility(eventId: string) {
+  return apiFetch<VotingEligibility>(`/events/${eventId}/voting/my-eligibility`);
+}
+
+// --- Voting (Module 11) — vote casting (any authenticated user) ---
+
+export function getPowChallenge(eventId: string) {
+  return apiFetch<PowChallenge>(`/events/${eventId}/voting/pow-challenge`);
+}
+
+export function getVotingCaptchaChallenge(eventId: string) {
+  return apiFetch<VotingCaptchaChallenge>(`/events/${eventId}/voting/captcha-challenge`);
+}
+
+export function castVote(
+  eventId: string,
+  input: { submissionId: string; powChallengeId: string; powNonce: string; captchaChallengeId?: string; captchaAnswer?: string },
+) {
+  return apiFetch<{ ok: true }>(`/events/${eventId}/voting/votes`, { method: 'POST', body: input });
+}
+
+// --- Certificates (Module 12) — organizer ---
+
+export function enableCertificates(eventId: string) {
+  return apiFetch<{ certificatesEnabled: boolean; certificatesEnabledAt: string }>(`/events/${eventId}/certificates/enable`, {
+    method: 'POST',
+  });
+}
+
+export function getCertificateTemplate(eventId: string) {
+  return apiFetch<CertificateTemplate>(`/events/${eventId}/certificates/template`);
+}
+
+export function upsertCertificateTemplate(eventId: string, svgMarkup: string) {
+  return apiFetch<CertificateTemplate>(`/events/${eventId}/certificates/template`, {
+    method: 'PUT',
+    body: { svgMarkup },
+  });
+}
+
+export function manualIssueCertificate(eventId: string, input: { userId: string; role: CertificateRole; reason: string }) {
+  return apiFetch<Certificate>(`/events/${eventId}/certificates/issue`, { method: 'POST', body: input });
+}
+
+// --- Certificates (Module 12) — self-service ---
+
+export function generateMyCertificates(eventId: string) {
+  return apiFetch<Certificate[]>(`/events/${eventId}/certificates/mine`, { method: 'POST' });
+}
+
+export function listMyCertificates(eventId: string) {
+  return apiFetch<Certificate[]>(`/events/${eventId}/certificates/mine`);
+}
+
+// --- Certificates (Module 12) — public ---
+
+export function getPublicCertificate(id: string) {
+  return apiFetch<PublicCertificate>(`/certificates/${id}`);
+}
+
+export function getUserCertificateGallery(userId: string) {
+  return apiFetch<GalleryCertificate[]>(`/users/${userId}/certificates`);
+}
+
+// Direct browser navigation (not fetch) — the session cookie is
+// SameSite=Lax, which is sent on a top-level GET navigation like this
+// even cross-origin, so the API can authorize the download without any
+// blob/fetch plumbing on this side.
+export function certificateDownloadUrl(id: string): string {
+  return `${API_URL}/certificates/${id}/download`;
 }

@@ -230,7 +230,7 @@ describe('CertificatesService', () => {
       const signing = makeSigning({ verify: jest.fn().mockReturnValue(true) });
       const service = new CertificatesService(prisma, makeAudit() as any, makeRedis(), signing, makeTemplates());
 
-      const result = await service.getPublic('cert-1');
+      const result = await service.getPublic('cert-1', null);
 
       expect(signing.verify).toHaveBeenCalledWith({ recipientName: 'Ada' }, 'sig', 'key-1');
       expect(result.verified).toBe(true);
@@ -245,7 +245,7 @@ describe('CertificatesService', () => {
       const signing = makeSigning({ verify: jest.fn().mockReturnValue(false) });
       const service = new CertificatesService(prisma, makeAudit() as any, makeRedis(), signing, makeTemplates());
 
-      const result = await service.getPublic('cert-1');
+      const result = await service.getPublic('cert-1', null);
 
       expect(result.verified).toBe(false);
     });
@@ -255,7 +255,7 @@ describe('CertificatesService', () => {
       prisma.certificate.findUnique.mockResolvedValue(null);
       const service = new CertificatesService(prisma, makeAudit() as any, makeRedis(), makeSigning(), makeTemplates());
 
-      await expect(service.getPublic('nope')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.getPublic('nope', null)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -270,8 +270,8 @@ describe('CertificatesService', () => {
       const templates = makeTemplates();
       const service = new CertificatesService(prisma, makeAudit() as any, redis, makeSigning(), templates);
 
-      const first = await service.getPublic('cert-1');
-      const second = await service.getPublic('cert-1');
+      const first = await service.getPublic('cert-1', null);
+      const second = await service.getPublic('cert-1', null);
 
       expect(second.svg).toBe(first.svg);
       expect(redis.client.set).toHaveBeenCalledTimes(1); // only rendered once
@@ -286,7 +286,7 @@ describe('CertificatesService', () => {
         payloadJson: { recipientName: 'Ada' }, signature: 'sig', publicKeyId: 'key-1',
       });
       const service = new CertificatesService(prisma, makeAudit() as any, redis, makeSigning(), templates);
-      const beforeEdit = await service.getPublic('cert-1');
+      const beforeEdit = await service.getPublic('cert-1', null);
 
       // A newer certificate, issued after the template was edited, pins
       // the NEW version — different cache key, different content.
@@ -295,7 +295,7 @@ describe('CertificatesService', () => {
         id: 'cert-2', templateId: 'tmpl-2', templateVersion: 2,
         payloadJson: { recipientName: 'Ada' }, signature: 'sig', publicKeyId: 'key-1',
       });
-      const afterEdit = await service.getPublic('cert-2');
+      const afterEdit = await service.getPublic('cert-2', null);
 
       expect(beforeEdit.svg).toContain('v1');
       expect(afterEdit.svg).toContain('v2');

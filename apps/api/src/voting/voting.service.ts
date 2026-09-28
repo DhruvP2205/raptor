@@ -110,6 +110,31 @@ export class VotingService {
     return round;
   }
 
+  // design/11-voting.md Section 4's "Round history — every past round
+  // (including deactivated ones) viewable read-only" has no way to be
+  // built without this: the controller previously only exposed the
+  // single current ACTIVE round, never a full list. Read-only, additive.
+  async listRounds(eventId: string) {
+    await this.getEventOrThrow(eventId);
+    return this.prisma.votingRound.findMany({ where: { eventId }, orderBy: { roundNumber: 'desc' } });
+  }
+
+  // design/11-voting.md Section 3's shortlist-curation screen (and
+  // Section 4's minor-correction form, which needs a real entryId to
+  // target) both need to see the round's already-finalized shortlist on
+  // a normal page load — finalizeShortlist's own response was the only
+  // place these rows were ever returned, and only immediately after
+  // finalizing, never on reload. Read-only, additive, mirrors
+  // getPublicShortlist's own submission join.
+  async getShortlistEntries(eventId: string, roundId: string) {
+    await this.getRoundOrThrow(eventId, roundId);
+    return this.prisma.shortlistEntry.findMany({
+      where: { votingRoundId: roundId },
+      include: { submission: { select: { id: true, title: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   // Section 7 — only actionable between resultsAnnounceAt and
   // eventClosedAt (D49); deactivates the current round (mandatory
   // reason), creates a fresh round+1 from scratch (blank shortlist,
@@ -310,7 +335,18 @@ export class VotingService {
       where: { votingRoundId: round.id },
       include: { submission: { select: { id: true, title: true } } },
     });
-    return { roundId: round.id, roundNumber: round.roundNumber, entries };
+    // design/11-voting.md Section 2's states table needs "voting opens
+    // {date}" / "voting has closed" shown proactively on the ballot
+    // page itself, not just discovered by a failed vote attempt — these
+    // timestamps are organizer-set, non-sensitive, and were simply never
+    // included in this response before.
+    return {
+      roundId: round.id,
+      roundNumber: round.roundNumber,
+      votingOpensAt: round.votingOpensAt,
+      votingClosesAt: round.votingClosesAt,
+      entries,
+    };
   }
 
   // --- Vote casting (Section 2/3/5) ---
@@ -402,29 +438,77 @@ export class VotingService {
     return { ok: true };
   }
 
-  private async assertEligible(eventId: string, event: Event, userId: string): Promise<void> {
+  // Single source of truth for the mode-based half of eligibility —
+  // both assertEligible (castVote's enforcement path, throws) and
+  // getMyEligibility (the read-only display path the ballot page polls
+  // to pick its exact explanatory line, design/11-voting.md Section 2 —
+  // "matching whichever backend rule actually excluded them") delegate
+  // here, so the two can never silently drift apart on what "eligible"
+  // means.
+  private async computeEligibilityReason(
+    eventId: string,
+    event: Event,
+    userId: string,
+  ): Promise<'NOT_PARTICIPANT' | 'EMAIL_NOT_VERIFIED' | null> {
     if (event.votingEligibilityMode === 'PARTICIPANTS_ONLY') {
       const membership = await this.prisma.eventMembership.findUnique({
         where: { userId_eventId: { userId, eventId } },
       });
       if (!membership || membership.role !== 'PARTICIPANT' || membership.invitationStatus !== 'ACCEPTED') {
-        throw new ForbiddenException({
-          code: 'NOT_ELIGIBLE_TO_VOTE',
-          message: 'Only participants of this event can vote (PARTICIPANTS_ONLY mode).',
-        });
+        return 'NOT_PARTICIPANT';
       }
-      return;
+      return null;
     }
 
     // VERIFIED_PLATFORM_USERS (or unset, defensively — createInitialRound
     // never lets a round exist without a mode chosen).
     const voter = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!voter?.emailVerifiedAt) {
+      return 'EMAIL_NOT_VERIFIED';
+    }
+    return null;
+  }
+
+  private async assertEligible(eventId: string, event: Event, userId: string): Promise<void> {
+    const reason = await this.computeEligibilityReason(eventId, event, userId);
+    if (reason === 'NOT_PARTICIPANT') {
+      throw new ForbiddenException({
+        code: 'NOT_ELIGIBLE_TO_VOTE',
+        message: 'Only participants of this event can vote (PARTICIPANTS_ONLY mode).',
+      });
+    }
+    if (reason === 'EMAIL_NOT_VERIFIED') {
       throw new ForbiddenException({
         code: 'NOT_ELIGIBLE_TO_VOTE',
         message: 'Only users with a verified email can vote.',
       });
     }
+  }
+
+  // Read-only counterpart to castVote's enforcement, for the public
+  // ballot page (design/11-voting.md Section 2's states table) to show
+  // the specific reason a visitor can't vote — never a generic
+  // "unavailable" message — without duplicating the authorization
+  // decision itself (delegates to the exact same checks castVote uses).
+  async getMyEligibility(
+    eventId: string,
+    voter: { id: string; createdAt: Date } | null,
+  ): Promise<{ eligible: boolean; reason: 'NOT_SIGNED_IN' | 'ACCOUNT_TOO_NEW' | 'NOT_PARTICIPANT' | 'EMAIL_NOT_VERIFIED' | null }> {
+    const event = await this.getEventOrThrow(eventId);
+    if (!voter) {
+      return { eligible: false, reason: 'NOT_SIGNED_IN' };
+    }
+    if (voter.createdAt.getTime() >= event.eventStartsAt.getTime()) {
+      return { eligible: false, reason: 'ACCOUNT_TOO_NEW' };
+    }
+    if (!event.votingEligibilityMode) {
+      return { eligible: false, reason: 'NOT_SIGNED_IN' };
+    }
+    const reason = await this.computeEligibilityReason(eventId, event, voter.id);
+    if (reason) {
+      return { eligible: false, reason };
+    }
+    return { eligible: true, reason: null };
   }
 
   private async countDistinctVotersForIp(votingRoundId: string, ipHash: string): Promise<number> {

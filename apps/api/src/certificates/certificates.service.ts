@@ -129,17 +129,27 @@ export class CertificatesService {
 
   // --- Public view / download / gallery (Section 6/7) ---
 
-  async getPublic(certificateId: string) {
+  // `viewer` is optional (this route is reachable signed-out) — design/
+  // 12-certificates.md Section 2's "Download PDF... present but
+  // disabled-with-explanation" state needs the frontend to know
+  // *before* the click whether download will actually work, which
+  // the payload spread alone can't answer (no userId/eventId in it,
+  // deliberately — payloadJson is only ever the certificate's own
+  // frozen facts). Computed via the exact same check download() itself
+  // enforces, so the two can never silently disagree.
+  async getPublic(certificateId: string, viewer: { id: string; siteAdmin: boolean } | null) {
     const certificate = await this.getCertificateOrThrow(certificateId);
     const template = await this.templates.getById(certificate.templateId);
     const svg = await this.renderSvg(certificate, template.svgMarkup);
     const verified = this.signing.verify(certificate.payloadJson, certificate.signature, certificate.publicKeyId);
+    const canDownload = viewer ? await this.canDownload(certificate.eventId, certificate.userId, viewer) : false;
 
     return {
       ...(certificate.payloadJson as unknown as CertificatePlaceholders),
       certificateId: certificate.id,
       svg,
       verified,
+      canDownload,
     };
   }
 
@@ -331,13 +341,17 @@ export class CertificatesService {
 
   // --- Access control (Section 6, D39) ---
 
-  private async assertCanDownload(eventId: string, ownerUserId: string, caller: { id: string; siteAdmin: boolean }): Promise<void> {
-    if (caller.siteAdmin || caller.id === ownerUserId) return;
+  private async canDownload(eventId: string, ownerUserId: string, caller: { id: string; siteAdmin: boolean }): Promise<boolean> {
+    if (caller.siteAdmin || caller.id === ownerUserId) return true;
 
     const membership = await this.prisma.eventMembership.findUnique({
       where: { userId_eventId: { userId: caller.id, eventId } },
     });
-    if (membership?.role === 'ORGANIZER' && membership.invitationStatus === 'ACCEPTED') return;
+    return membership?.role === 'ORGANIZER' && membership.invitationStatus === 'ACCEPTED';
+  }
+
+  private async assertCanDownload(eventId: string, ownerUserId: string, caller: { id: string; siteAdmin: boolean }): Promise<void> {
+    if (await this.canDownload(eventId, ownerUserId, caller)) return;
 
     throw new ForbiddenException({
       code: 'CERTIFICATE_DOWNLOAD_FORBIDDEN',

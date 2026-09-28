@@ -64,7 +64,39 @@ export class VotingResultsService {
     if (!version || version.eventId !== eventId) {
       throw new NotFoundException({ code: 'VOTING_RESULT_VERSION_NOT_FOUND', message: 'No such voting result version on this event.' });
     }
-    return version;
+    const correctedSubmissionId = await this.deriveCorrectedSubmissionId(eventId, version);
+    return { ...version, correctedSubmissionId };
+  }
+
+  // Mirrors ResultsService.deriveCorrectedSubmissionId (Module 10) —
+  // Section 9 says corrections here follow "the identical... rules" as
+  // that module's Section 7, including the visible-marking requirement,
+  // but VotingResultEntry has no more of a per-row correction marker
+  // than RankResultEntry did. Diffed against the immediately-previous
+  // version instead of a schema change. REASSIGN_CREDIT is trickier
+  // than any Module 10 correction type: the corrected row's submissionId
+  // itself changes, so it won't match anything in the previous version
+  // by submissionId at all — that "brand new submissionId" case is
+  // exactly the signal to look for, alongside the ordinary
+  // matched-but-changed case DISQUALIFY produces.
+  private async deriveCorrectedSubmissionId(
+    eventId: string,
+    version: { versionNumber: number; correctionReason: string | null; entries: { submissionId: string; voteCount: number; isDisqualified: boolean }[] },
+  ): Promise<string | null> {
+    if (!version.correctionReason || version.versionNumber <= 1) return null;
+    const previous = await this.prisma.votingResultVersion.findFirst({
+      where: { eventId, versionNumber: version.versionNumber - 1 },
+      include: { entries: true },
+    });
+    if (!previous) return null;
+    const previousBySubmission = new Map(previous.entries.map((e) => [e.submissionId, e]));
+    for (const entry of version.entries) {
+      const before = previousBySubmission.get(entry.submissionId);
+      if (!before || before.voteCount !== entry.voteCount || before.isDisqualified !== entry.isDisqualified) {
+        return entry.submissionId;
+      }
+    }
+    return null;
   }
 
   // Section 8 — hidden during voting, aggregate-only after publish.
@@ -81,7 +113,9 @@ export class VotingResultsService {
         },
       },
     });
-    return live ?? null;
+    if (!live) return null;
+    const correctedSubmissionId = await this.deriveCorrectedSubmissionId(eventId, live);
+    return { ...live, correctedSubmissionId };
   }
 
   async unpublish(eventId: string, versionId: string, userId: string, reason: string) {

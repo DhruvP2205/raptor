@@ -142,6 +142,11 @@ export default function EventDetailPage() {
             View results
           </Button>
         </Link>
+        <Link href={`/events/${slug}/voting`}>
+          <Button fullWidth size="sm" variant="secondary">
+            Audience choice voting
+          </Button>
+        </Link>
         <Card raised className="flex flex-col gap-3">
           {/* Registration/team/submission self-service is entirely
               absent once archived (design doc's ARCHIVED row) —
@@ -177,6 +182,13 @@ export default function EventDetailPage() {
                   My submission
                 </Button>
               </Link>
+              {event.certificatesEnabled && (
+                <Link href={`/events/${slug}/certificates`}>
+                  <Button fullWidth size="sm" variant="secondary">
+                    Get your certificate
+                  </Button>
+                </Link>
+              )}
             </>
           )}
           {user && user.accountType === 'ORGANIZER' && (
@@ -200,6 +212,13 @@ export default function EventDetailPage() {
                   My assigned projects
                 </Button>
               </Link>
+              {event.certificatesEnabled && (
+                <Link href={`/events/${slug}/certificates`}>
+                  <Button fullWidth size="sm" variant="secondary">
+                    Get your certificate
+                  </Button>
+                </Link>
+              )}
             </>
           )}
         </Card>
