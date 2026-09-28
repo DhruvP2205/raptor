@@ -2,14 +2,17 @@ import { cn } from '@/lib/cn';
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger';
 
-const TONE_CLASSES: Record<Tone, string> = {
-  neutral: 'bg-line/60 text-ink-muted',
-  accent: 'bg-accent-soft text-accent-hover',
-  success: 'bg-success-soft text-success',
-  warning: 'bg-warning-soft text-warning',
-  danger: 'bg-danger-soft text-danger',
+const DOT_CLASSES: Record<Tone, string> = {
+  neutral: 'bg-ink-faint',
+  accent: 'bg-accent',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger',
 };
 
+// A dot + label, normal case, thin border — a status indicator you'd
+// see in an actual product (Linear/Vercel), not an uppercase pastel
+// pill (that pattern is a generic-template tell).
 export function Badge({
   tone = 'neutral',
   className,
@@ -22,11 +25,11 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-sm px-2 py-0.5 text-xs font-medium uppercase tracking-wide',
-        TONE_CLASSES[tone],
+        'inline-flex items-center gap-1.5 rounded-full border border-line-strong px-2 py-0.5 text-xs font-medium text-ink-muted',
         className,
       )}
     >
+      <span className={cn('h-1.5 w-1.5 rounded-full', DOT_CLASSES[tone])} />
       {children}
     </span>
   );

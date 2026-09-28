@@ -942,3 +942,30 @@ instead of `/login` when that flag is set, and the set-password page
 itself treats `mustResetPassword` (not just `user`) as "ready to
 render" so it doesn't redirect to itself. A backend-correctness
 question turned into a frontend state-modeling bug, not a guard change.
+
+**D87 — Scrapped the first frontend design pass (warm cream/amber
+palette, serif+sans font pairing, eyebrow-badge hero, symmetric 3-card
+"why choose us" grid) for a monochrome, single-typeface system modeled
+directly on Vercel/Geist's actual visual language.**
+Context: user feedback, verbatim: the first pass "looks AI generated"
+and had "too many AI slop" tells despite an explicit instruction to
+avoid exactly that. In hindsight, the specific patterns that read as
+generated-template rather than a genuine product: an eyebrow pill badge
+above the hero headline, a perfectly symmetric three-identical-card
+feature grid, and a serif-for-headings/sans-for-body pairing chosen
+*because* it looked "distinctive" — all recognizable defaults from
+AI website builders and Framer templates, not signs of a considered
+design. Replaced with: black/white/gray palette plus one blue accent
+used only for links and focus rings (never a colored primary button —
+primary buttons are solid black, matching Vercel's own convention);
+a single sans typeface for both headings and body (tight negative
+letter-spacing on headings substitutes for a second typeface); status
+badges as a small dot + label instead of an uppercase pastel pill; the
+landing page's feature section rebuilt as a plain definition list
+instead of three cards; a terminal-style panel (`docker compose up`
+mock output) replacing the hero's eyebrow badge, both because it's a
+more genuine self-hosted-tool signal and because it structurally can't
+read as a generic SaaS template. Component/token *names* were kept
+unchanged (`ink`, `paper`, `accent`, etc.) — only their values and a
+few components' internal markup changed — specifically so this was a
+values-and-markup revision, not a rename sweep across every page.

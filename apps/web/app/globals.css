@@ -2,14 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
-/* System-native font stacks — no Google Fonts / next/font/google. This
+/* System-native font stack — no Google Fonts / next/font/google. This
    keeps the build fully offline-capable (no third-party hosted
-   dependency at build time either, per CLAUDE.md principle 6) and
-   avoids the Inter-everywhere look most generated UIs default to. */
+   dependency at build time either, per CLAUDE.md principle 6). One
+   typeface for everything (display and body share --font-display /
+   --font-body on purpose) — a serif/sans pairing was tried first and
+   scrapped for reading as a "Framer template" gimmick rather than a
+   genuine product (D87, docs/DECISIONS.md). Headings get weight and
+   tight tracking instead of a different typeface. */
 :root {
-  --font-display: ui-serif, Georgia, Cambria, 'Times New Roman', serif;
-  --font-body: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+  --font-display: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
+  --font-body: var(--font-display);
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Segoe UI Mono',
     Consolas, 'Liberation Mono', monospace;
 }
@@ -24,10 +28,11 @@ html {
 
 body {
   margin: 0;
-  background-color: #f6f2ea;
-  color: #1b1812;
+  background-color: #ffffff;
+  color: #0a0a0a;
   font-family: var(--font-body);
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 h1,
@@ -36,7 +41,8 @@ h3,
 h4 {
   font-family: var(--font-display);
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
 }
 
 a {
@@ -50,7 +56,7 @@ a {
 .prose-content {
   font-size: 1rem;
   line-height: 1.7;
-  color: #1b1812;
+  color: #0a0a0a;
 }
 .prose-content > :first-child {
   margin-top: 0;
@@ -69,21 +75,21 @@ a {
   padding-left: 1.4em;
 }
 .prose-content a {
-  color: #b8541f;
+  color: #0070f3;
   text-decoration: underline;
 }
 .prose-content code {
   font-family: var(--font-mono);
-  background: #e2dacae0;
+  background: #eaeaea;
   padding: 0.15em 0.35em;
-  border-radius: 3px;
+  border-radius: 4px;
   font-size: 0.9em;
 }
 .prose-content pre {
-  background: #1b1812;
-  color: #f6f2ea;
+  background: #0a0a0a;
+  color: #ffffff;
   padding: 0.9em 1em;
-  border-radius: 5px;
+  border-radius: 6px;
   overflow-x: auto;
 }
 .prose-content pre code {
@@ -91,8 +97,8 @@ a {
   padding: 0;
 }
 .prose-content blockquote {
-  border-left: 3px solid #cfc3aa;
+  border-left: 3px solid #d4d4d4;
   margin: 0 0 1em;
   padding-left: 1em;
-  color: #6b6354;
+  color: #666666;
 }

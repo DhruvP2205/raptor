@@ -13,10 +13,13 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   fullWidth?: boolean;
 }
 
+// Primary is solid black, not a colored brand button — the accent
+// color is reserved for links/focus rings only (Vercel/Geist's actual
+// convention, not a generic colored-CTA template).
 const VARIANT_CLASSES: Record<Variant, string> = {
-  primary: 'bg-accent text-accent-ink border-accent hover:bg-accent-hover hover:border-accent-hover',
-  secondary: 'bg-paper-raised text-ink border-line-strong hover:border-ink-faint',
-  ghost: 'bg-transparent text-ink border-transparent hover:bg-line/40',
+  primary: 'bg-ink text-white border-ink hover:bg-ink/85',
+  secondary: 'bg-white text-ink border-line-strong hover:border-ink',
+  ghost: 'bg-transparent text-ink border-transparent hover:bg-line/50',
   danger: 'bg-danger text-white border-danger hover:bg-danger/85',
 };
 

@@ -1,11 +1,14 @@
 import type { Config } from 'tailwindcss';
 
-// Custom tokens only — deliberately not extending Tailwind's default
-// slate/indigo palette or radius scale. See docs-free design rationale
-// in the session that introduced this file: warm paper/ink base, one
-// confident accent, flat hairline-bordered shapes instead of heavy
-// shadows/large radii, system-native font stacks (no Google Fonts
-// dependency — see globals.css).
+// Monochrome-first system (black/white/gray + one restrained blue
+// accent for links/focus only — never a colored primary button),
+// single sans typeface for everything, hairline borders, small radii.
+// Deliberately modeled on Vercel/Geist's actual visual language, not a
+// generic "SaaS template" palette — see docs/DECISIONS.md D87 for why
+// the first pass (warm cream/amber, serif headlines, badge-pill hero)
+// got scrapped. Token *names* are unchanged from that first pass so
+// every component file that already references them doesn't need
+// touching — only the values moved.
 const config: Config = {
   content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
   theme: {
@@ -13,23 +16,23 @@ const config: Config = {
       transparent: 'transparent',
       current: 'currentColor',
       white: '#ffffff',
-      paper: '#F6F2EA',
-      'paper-raised': '#FBF8F2',
-      ink: '#1B1812',
-      'ink-muted': '#6B6354',
-      'ink-faint': '#958C78',
-      line: '#E2DACA',
-      'line-strong': '#CFC3AA',
-      accent: '#B8541F',
-      'accent-hover': '#9C4418',
-      'accent-soft': '#F1DCC9',
-      'accent-ink': '#FFF7EF',
-      danger: '#9C3B2E',
-      'danger-soft': '#F3DCD6',
-      success: '#3F6B4A',
-      'success-soft': '#DCE8DD',
-      warning: '#8A6A1E',
-      'warning-soft': '#F1E4C3',
+      paper: '#ffffff',
+      'paper-raised': '#fafafa',
+      ink: '#0a0a0a',
+      'ink-muted': '#666666',
+      'ink-faint': '#8f8f8f',
+      line: '#eaeaea',
+      'line-strong': '#d4d4d4',
+      accent: '#0070f3',
+      'accent-hover': '#0761d1',
+      'accent-soft': '#eaf3ff',
+      'accent-ink': '#ffffff',
+      danger: '#e5484d',
+      'danger-soft': '#feeced',
+      success: '#12805c',
+      'success-soft': '#e6f6f0',
+      warning: '#b36b00',
+      'warning-soft': '#fef3e2',
     },
     fontFamily: {
       display: ['var(--font-display)'],
@@ -38,15 +41,15 @@ const config: Config = {
     },
     borderRadius: {
       none: '0px',
-      sm: '3px',
-      DEFAULT: '5px',
-      md: '6px',
-      lg: '8px',
+      sm: '4px',
+      DEFAULT: '6px',
+      md: '8px',
+      lg: '10px',
       full: '9999px',
     },
     boxShadow: {
       none: 'none',
-      popover: '0 8px 24px -8px rgba(27, 24, 18, 0.25)',
+      popover: '0 12px 32px -12px rgba(0, 0, 0, 0.28)',
     },
     extend: {
       maxWidth: {
