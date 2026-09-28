@@ -159,6 +159,7 @@ export class EventsService {
         ...(dto.finalScoreDisplayScale !== undefined
           ? { finalScoreDisplayScale: dto.finalScoreDisplayScale }
           : {}),
+        ...(dto.commentsEnabled !== undefined ? { commentsEnabled: dto.commentsEnabled } : {}),
         ...timelineUpdates,
       },
     });

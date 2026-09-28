@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsISO8601,
   IsInt,
@@ -110,4 +111,12 @@ export class UpdateEventDto {
   @IsOptional()
   @IsISO8601()
   eventClosedAt?: string;
+
+  // Module 13's field (Comments, Section 3) — organizer can disable new
+  // comment creation entirely; existing comments stay visible either
+  // way. Defaults to true (schema default), so this is an edit-only
+  // field, not part of CreateEventDto.
+  @IsOptional()
+  @IsBoolean()
+  commentsEnabled?: boolean;
 }

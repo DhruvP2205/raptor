@@ -129,6 +129,12 @@ model User {
   globalRankingEntries          GlobalRankingEntry[]
   globalRankingSnapshotsTriggered GlobalRankingSnapshot[] @relation("GlobalRankingSnapshotTrigger")
   globalPointsConfigsUpdated    GlobalPointsConfig[]    @relation("GlobalPointsConfigUpdater")
+
+  // Module 13 (Comments) — `comments` is every comment this user has
+  // authored; `commentsModerated` is provenance-only, the organizer/
+  // admin who soft-deleted someone else's comment (Section 6).
+  comments          Comment[] @relation("CommentAuthor")
+  commentsModerated Comment[] @relation("CommentModerator")
 }
 
 model Session {
@@ -235,6 +241,11 @@ model Event {
   certificatesEnabledAt       DateTime?
   certificatesEnabledByUserId String?
   certificatesEnabledByUser   User?     @relation("CertificatesEnabler", fields: [certificatesEnabledByUserId], references: [id])
+
+  // Module 13's field (Comments, Section 3) — organizer can disable
+  // new comment creation entirely; existing comments stay visible
+  // regardless (disabling is not deleting).
+  commentsEnabled Boolean @default(true)
 
   // Timeline — all required at creation (Section 3.3's ordering chain
   // can't be validated against a partially-set timeline). UTC.
@@ -602,6 +613,12 @@ model Submission {
   // special award, or audience-choice), across every snapshot ever
   // generated (Section 7, docs/stages/14-global-ranking.md).
   globalRankingAwardDetails GlobalRankingAwardDetail[]
+
+  // Module 13 — flat, chronological comment list (Section 4/8,
+  // docs/stages/13-comments.md). Comments stay visible even if this
+  // submission later reverts to isDraft: true (Section 9's own test) —
+  // only new comment creation is gated by current gallery visibility.
+  comments Comment[]
 
   // NULLs are distinct under Postgres's default unique-index semantics,
   // so this only constrains actual (eventId, soloUserId) pairs — it
@@ -1616,4 +1633,38 @@ model GlobalRankingAwardDetail {
   finalScore    Float?
   prizeUsd      Int?
   pointsAwarded Int
+}
+
+// Module 13 (Comments) — see docs/stages/13-comments.md. Flat, no
+// threading (Section 4). Always soft-deleted, never hard-deleted
+// (Section 6) — "nothing silently disappears," same principle applied
+// everywhere else in this platform.
+model Comment {
+  id String @id @default(uuid())
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation("CommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+
+  body String
+
+  createdAt DateTime  @default(now())
+  // Set on every edit, most-recent only — same "most-recent, not
+  // original" pattern as Submission.submittedAt (D31). Null means
+  // never edited; the public view shows "(edited)" whenever non-null.
+  editedAt  DateTime?
+
+  // Soft-delete only. deletionReason is mandatory ONLY when
+  // deletedByUserId differs from userId (a moderation action) —
+  // enforced at the application layer, not the schema, same
+  // conditionally-required-text-field pattern as every other mandatory
+  // reason in this project. Self-deletion needs no reason at all.
+  deletedAt       DateTime?
+  deletedByUserId String?
+  deletedBy       User?     @relation("CommentModerator", fields: [deletedByUserId], references: [id])
+  deletionReason  String?
+
+  @@index([submissionId])
 }

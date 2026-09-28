@@ -253,16 +253,16 @@ vs. where the clock currently sits) before being modeled as one enum.
 ## 8. Deferred/not-yet-designed subsystems
 
 Documented here so it's clear what's intentionally not architected yet,
-rather than accidentally forgotten. Modules 1-12 and 14 (Auth & Email
-through Certificates, plus Global Ranking) are implemented as of this
-update; Module 13 (Comments) has a locked stage doc but isn't
-implemented yet — it belongs in the module list, not this one. Global
-Ranking introduced no new infrastructure, as anticipated: its snapshot
-recompute job runs on the existing `worker` container (Module 6, a new
-BullMQ queue alongside Module 6's own verification queue), and its
-cache reads reuse the existing Redis instance — same pattern as
-CAPTCHA/PoW state. What's actually listed here still has **no stage
-doc at all**:
+rather than accidentally forgotten. **All fourteen currently-locked
+modules (Auth & Email through Global Ranking) are implemented as of
+this update.** Global Ranking introduced no new infrastructure, as
+anticipated: its snapshot recompute job runs on the existing `worker`
+container (Module 6, a new BullMQ queue alongside Module 6's own
+verification queue), and its cache reads reuse the existing Redis
+instance — same pattern as CAPTCHA/PoW state. Comments (Module 13)
+introduced no new infrastructure either: rate limiting reuses the same
+Redis-backed mechanism as voting/uploads. What's actually listed here
+still has **no stage doc at all**:
 
 - The shareable, not-yet-bound judge invitation link (Section 3.2 of
   Module 2's stage doc, bullet 2) — direct-add by known email is

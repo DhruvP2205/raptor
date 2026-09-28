@@ -5,6 +5,7 @@ import { AssignmentsModule } from './assignments/assignments.module';
 import { AuditModule } from './audit/audit.module';
 import { CalibrationModule } from './calibration/calibration.module';
 import { CertificatesModule } from './certificates/certificates.module';
+import { CommentsModule } from './comments/comments.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
 import { GithubTokensModule } from './github-tokens/github-tokens.module';
@@ -55,6 +56,7 @@ import { VotingModule } from './voting/voting.module';
     VotingModule,
     CertificatesModule,
     GlobalRankingModule,
+    CommentsModule,
   ],
   controllers: [AppController],
 })

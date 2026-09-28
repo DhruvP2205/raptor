@@ -25,17 +25,17 @@ way again, Module 8 added `judgingClosesAt` (D108) and
 `finalScoreDisplayScale`. `Submission` started as a minimal anchor in
 Module 4 — `id`, `teamId`, `everSubmitted`, `createdAt` (D75) — and
 Module 5 extended it additively to the full shape below, per its own
-scope. **Modules 11-12 and 14 (Voting, Certificates, Global Ranking) are
-now implemented** — `Event.eventClosedAt`/`votingEligibilityMode`/
-`certificatesEnabled*`, `VotingRound`, `ShortlistEntry`, `Vote`,
-`VoteAbuseFlag`, `VotingResultVersion`, `VotingResultEntry`,
-`Certificate`, `CertificateTemplate`, `Prize.prizeUsd`,
+scope. **Modules 11-14 (Voting, Certificates, Comments, Global
+Ranking) are now implemented** — `Event.eventClosedAt`/
+`votingEligibilityMode`/`certificatesEnabled*`/`commentsEnabled`,
+`VotingRound`, `ShortlistEntry`, `Vote`, `VoteAbuseFlag`,
+`VotingResultVersion`, `VotingResultEntry`, `Certificate`,
+`CertificateTemplate`, `Comment`, `Prize.prizeUsd`,
 `GlobalPointsConfig`, `GlobalRankingSnapshot`, `GlobalRankingEntry`,
-`GlobalRankingAwardDetail` all exist in the live schema (§11-12/14
-below). **Module 13 (Comments) has a locked stage doc as of this update
-but is not yet implemented** — §13 below describes its target schema
-only. If the live schema and a field documented here disagree **and the
-owning module has already been implemented**, that's a bug.
+`GlobalRankingAwardDetail` all exist in the live schema (§11-14 below).
+All fourteen currently-locked modules are implemented as of this
+update. If the live schema and a field documented here disagree **and
+the owning module has already been implemented**, that's a bug.
 
 ---
 
@@ -109,7 +109,9 @@ principle as `Event` itself starting as a minimal anchor (D59):
 Module 5, `maxProjectsPerJudge` with Module 7, `judgingClosesAt` and
 `finalScoreDisplayScale` with Module 8 (D108), `eventClosedAt` and
 `votingEligibilityMode` with Module 11 (voting-round-restart window and
-eligibility policy, D43/D49/D142 — see §11 below). `phase` adds a
+eligibility policy, D43/D49/D142 — see §11 below), `commentsEnabled`
+with Module 13 (per-event comment toggle, default `true` — see §13
+below). `phase` adds a
 synthetic `NOT_STARTED` value
 (D69) for a PUBLISHED event sitting before `registrationOpensAt`, not
 named in the stage doc's own phase list but required by its explicit
@@ -127,6 +129,7 @@ named in the stage doc's own phase list but required by its explicit
 | `maxProjectsPerJudge` | int, default 20 | **Implemented (Module 7).** Event-wide cap referenced by both manual and algorithmic assignment; a per-judge `EventMembership.projectLimitOverride` can override it. Default is an inferred value, not stated by the stage doc — see the schema's own comment |
 | `finalScoreDisplayScale` | int, default 5 | **Implemented (Module 8).** Organizer-facing display scale — entirely separate from the 0-100 judge input scale (§8 below); never the same number, never conflated |
 | `votingEligibilityMode` | enum: `PARTICIPANTS_ONLY \| VERIFIED_PLATFORM_USERS`, nullable | **Implemented (Module 11, D43).** Organizer-chosen once; nullable until then (round 1 cannot be created without it), immutable once round 1 exists — see §11 |
+| `commentsEnabled` | boolean, default `true` | **Implemented (Module 13).** Organizer can disable new comment creation entirely; existing comments stay visible either way — see §13 |
 | Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `judgingClosesAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`, `eventClosedAt` |
 | `eventClosedAt` | timestamptz, UTC | **Implemented (Module 11, D49/D142).** Upper bound of the voting-round-restart window (`[resultsAnnounceAt, eventClosedAt]`); added to the ordering chain strictly after `votingWinnerAnnounceAt`, same additive precedent as `judgingClosesAt`. Introduces no new `EventPhase` value — see §11 |
 | `judgingClosesAt` | timestamptz, UTC | **Implemented (Module 8, D108).** Sits between `eventEndsAt` and `resultsAnnounceAt` in the ordering chain; Module 3's own code (`event-timeline.ts`, `event-phase.ts`) was amended to add it and the new `JUDGING_CLOSED` phase — the one place a later module amends an earlier, already-shipped one, per Module 8 Section 10 (and Module 3's own doc, Sections 2.2/3.3). |
@@ -676,9 +679,8 @@ per-certificate hide/opt-out exists in this design.
 
 ## 13. Comments (Module 13)
 
-**Locked stage doc as of this update, not yet implemented** — see
-`stages/13-comments.md`. Depends on Module 1 (`emailVerifiedAt`) and
-Module 5 (gallery visibility via `isDraft`).
+**Implemented.** See `stages/13-comments.md`. Depends on Module 1
+(`emailVerifiedAt`) and Module 5 (gallery visibility via `isDraft`).
 
 ### `Comment`
 
