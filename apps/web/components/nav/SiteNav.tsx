@@ -10,9 +10,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const { user } = useAuth();
   return (
     <>
-      <Link href="/events" onClick={onNavigate} className="text-sm font-medium hover:text-accent">
-        Browse events
-      </Link>
+      {/* No separate "Browse events" link — the logo already goes to
+          "/", which IS the browse/discovery page now (D90). A second
+          link to the same destination would just be redundant chrome. */}
       {user?.accountType === 'ORGANIZER' && (
         <Link href="/events/new" onClick={onNavigate} className="text-sm font-medium hover:text-accent">
           Create event

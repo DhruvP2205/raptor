@@ -1016,3 +1016,30 @@ real-data stats strip to the hero (event/live/upcoming counts from the
 same `listEvents()` call already being made) — a SaaS platform's
 homepage reads as confident partly because it's showing real numbers,
 which a generic template never has.
+
+**D90 — The homepage (`/`) is now the actual event discovery tool —
+search, phase tabs, a dense real-event grid — with the hero pitch,
+gradient background, and feature-marketing section removed entirely.
+The separate `/events` browse page was deleted; `/` now does its job.**
+Context: user feedback — didn't want "a product marketing page," wanted
+"a genuine home page that serves a purpose," and pointed at Unstop by
+name (also independently named in this project's own original brief,
+grouped with Devpost/Devfolio/TAIKAI/DoraHacks/HackerEarth as
+incumbents that "all ship the same nine things"). None of those
+platforms' homepages pitch the software to the people using it — the
+homepage *is* the listing: search, filter by status, a grid of real
+events. Rebuilt `/` around exactly that: a phase-tab filter bar (All/
+Live now/Upcoming/Results, each with a real count) plus a client-side
+text search over the already-fetched event list (no backend change —
+`GET /events` only supports `?phase=`, so search filters what's already
+loaded rather than pretending to hit a search endpoint that doesn't
+exist). `EventCard`'s footer date line was also made phase-aware
+(registration-closes / submissions-close / results-date, whichever is
+the actually relevant deadline for that event's current phase, not
+always "starts on") — matching how Devpost-style listings surface a
+deadline on every card. Every prior round's color/typography decisions
+(D87, D89) are unchanged; this is a content-and-structure change, not
+another visual pass. `/events` had no purpose distinct from `/` once
+this was done, so it was deleted rather than kept as a redundant route
+— the three places that used to link/redirect to it (nav, post-login,
+post-password-reset, post-event-delete) now point at `/` directly.

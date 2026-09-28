@@ -37,7 +37,7 @@ export default function SetPasswordPage() {
     try {
       await setPassword(newPassword);
       await refresh();
-      router.push('/events');
+      router.push('/');
     } catch (err) {
       setError(err);
     } finally {

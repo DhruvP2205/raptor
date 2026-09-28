@@ -30,7 +30,7 @@ export default function LoginPage() {
       // already has in hand.
       setUser(user);
       await refresh();
-      router.push(user.mustResetPassword ? '/set-password' : '/events');
+      router.push(user.mustResetPassword ? '/set-password' : '/');
     } catch (err) {
       setError(err);
     } finally {

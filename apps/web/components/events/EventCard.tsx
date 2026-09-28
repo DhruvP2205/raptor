@@ -5,6 +5,29 @@ import type { PublicEvent } from '@raptor/shared';
 import Link from 'next/link';
 import { PhaseBadge } from './PhaseBadge';
 
+// The single most decision-relevant date for whatever phase the event
+// is actually in right now — "when do I need to act by," not just
+// "when does it start." Matches how real hackathon listings (Devpost,
+// Unstop) surface a deadline on every card, not a fixed field.
+function deadlineLabel(event: PublicEvent): string {
+  switch (event.phase) {
+    case 'NOT_STARTED':
+      return `Registration opens ${formatDate(event.registrationOpensAt)}`;
+    case 'REGISTRATION_OPEN':
+      return `Registration closes ${formatDate(event.registrationClosesAt)}`;
+    case 'REGISTRATION_CLOSED':
+    case 'IN_PROGRESS':
+      return `Submissions open ${formatDate(event.submissionsOpenAt)}`;
+    case 'SUBMISSIONS_OPEN':
+      return `Submissions close ${formatDate(event.submissionsCloseAt)}`;
+    case 'SUBMISSIONS_CLOSED':
+    case 'JUDGING':
+      return `Results ${formatDate(event.resultsAnnounceAt)}`;
+    default:
+      return `Started ${formatDate(event.eventStartsAt)}`;
+  }
+}
+
 // Deterministic (by name, not random) so a card doesn't change color on
 // every re-render — a grid of no-poster events still reads as varied
 // rather than a wall of identical placeholders.
@@ -42,9 +65,7 @@ export function EventCard({ event }: { event: PublicEvent }) {
           {event.description && (
             <p className="line-clamp-2 text-sm text-ink-muted">{event.description}</p>
           )}
-          <p className="mt-auto pt-2 font-mono text-xs text-ink-faint">
-            Starts {formatDate(event.eventStartsAt)}
-          </p>
+          <p className="mt-auto pt-2 font-mono text-xs text-ink-faint">{deadlineLabel(event)}</p>
         </div>
       </Card>
     </Link>

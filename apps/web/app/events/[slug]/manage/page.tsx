@@ -71,7 +71,7 @@ export default function ManageEventPage() {
     setActionError(null);
     try {
       await deleteEvent(event!.id);
-      router.push('/events');
+      router.push('/');
     } catch (err) {
       setActionError(err);
       setActionLoading(false);
