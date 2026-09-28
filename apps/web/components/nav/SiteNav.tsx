@@ -13,6 +13,9 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
       {/* No separate "Browse events" link — the logo already goes to
           "/", which IS the browse/discovery page now (D90). A second
           link to the same destination would just be redundant chrome. */}
+      <Link href="/leaderboard" onClick={onNavigate} className="text-sm font-medium hover:text-accent">
+        Leaderboard
+      </Link>
       {user?.accountType === 'ORGANIZER' && (
         <Link href="/events/new" onClick={onNavigate} className="text-sm font-medium hover:text-accent">
           Create event
@@ -30,6 +33,15 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
           className="text-sm font-medium hover:text-accent"
         >
           Admin
+        </Link>
+      )}
+      {user?.siteAdmin && (
+        <Link
+          href="/admin/global-ranking"
+          onClick={onNavigate}
+          className="text-sm font-medium hover:text-accent"
+        >
+          Global ranking
         </Link>
       )}
     </>

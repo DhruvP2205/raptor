@@ -1,5 +1,6 @@
 'use client';
 
+import { CommentsSection } from '@/components/comments/CommentsSection';
 import { SubmissionCard } from '@/components/submissions/SubmissionCard';
 import { Alert } from '@/components/ui/Alert';
 import { Card, Container } from '@/components/ui/Card';
@@ -40,6 +41,11 @@ export default function SubmissionDetailPage() {
       <Card>
         <SubmissionCard submission={submission} />
       </Card>
+      <CommentsSection
+        submissionId={submission.id}
+        commentsEnabled={submission.event?.commentsEnabled ?? true}
+        isOrganizerOrAdmin={submission.isOrganizerOrAdmin ?? false}
+      />
     </Container>
   );
 }

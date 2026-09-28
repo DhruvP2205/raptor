@@ -88,6 +88,9 @@ export interface PublicEvent {
   // (only possible once a PublishedResultVersion is LIVE).
   certificatesEnabled: boolean;
   certificatesEnabledAt: string | null;
+  // Module 13 — organizer-toggleable, default true. Gates new comment
+  // creation only; existing comments stay visible when false.
+  commentsEnabled: boolean;
   createdAt: string;
   updatedAt: string;
   phase: EventPhase | null;
@@ -253,6 +256,15 @@ export interface Submission {
   // organizer/admin viewer — null for the owner and for the public
   // (Section 4's "verification-status panel... organizer/admin only").
   verification?: { finalDecision: 'PENDING_REVIEW' | 'APPROVED' | 'DISQUALIFIED' } | null;
+  // Only present on GET /submissions/:id (Module 13) — whether new
+  // comments can currently be posted on this submission's event.
+  event?: { commentsEnabled: boolean } | null;
+  // Only present on GET /submissions/:id, for a non-owner viewer —
+  // distinguishes "stranger" from "organizer/admin with no
+  // verification row yet" (both would otherwise show
+  // verification: null). Drives the comment-moderation "Remove"
+  // affordance (Module 13).
+  isOrganizerOrAdmin?: boolean;
 }
 
 export type CheckStatus =
@@ -666,6 +678,90 @@ export interface GalleryCertificate extends CertificatePlaceholders {
   role: CertificateRole;
   issuedAt: string;
   event: { id: string; name: string; slug: string };
+}
+
+// Module 13 (Comments) — see stages/13-comments.md.
+// Raw Comment row — returned by create/update/remove.
+export interface Comment {
+  id: string;
+  submissionId: string;
+  userId: string;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+  deletionReason: string | null;
+}
+
+// GET /submissions/:submissionId/comments — joined with author identity.
+export interface CommentWithAuthor extends Comment {
+  user: { id: string; displayName: string };
+}
+
+// Module 14 (Global Ranking) — see stages/14-global-ranking.md.
+export type GlobalAwardKind = 'PODIUM_FIRST' | 'PODIUM_SECOND' | 'PODIUM_THIRD' | 'SPECIAL_AWARD' | 'AUDIENCE_CHOICE';
+
+export interface GlobalPointsConfigRow {
+  awardKind: GlobalAwardKind;
+  points: number;
+  updatedByUserId: string | null;
+  updatedAt: string | null;
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  displayName: string;
+  rank: number;
+  isTied: boolean;
+  points: number;
+  prizeUsdTotal: number;
+  eventsCount: number;
+  awardsCount: number;
+  firstsCount: number;
+  secondsCount: number;
+  thirdsCount: number;
+}
+
+export interface LeaderboardPage {
+  snapshotId: string | null;
+  generatedAt: string | null;
+  page: number;
+  limit: number;
+  totalCount: number;
+  entries: LeaderboardEntry[];
+}
+
+export interface GlobalRankingAward {
+  event: { id: string; name: string; slug: string };
+  submissionId: string | null;
+  awardKind: GlobalAwardKind;
+  label: string;
+  teamName: string | null;
+  projectName: string | null;
+  finalScore: number | null;
+  prizeUsd: number | null;
+  pointsAwarded: number;
+}
+
+// GET /global-ranking/:userId — a real account always returns this
+// shape (never null); rank stays null and awards stays [] for a real
+// user with no ranking data yet (design doc Section 3's own explicit
+// "normal state for most users" case). A truly nonexistent userId 404s
+// instead (ApiError with code USER_NOT_FOUND).
+export interface GlobalRankingDrilldown {
+  userId: string;
+  displayName: string;
+  rank: number | null;
+  isTied: boolean;
+  points: number;
+  prizeUsdTotal: number;
+  eventsCount: number;
+  awardsCount: number;
+  firstsCount: number;
+  secondsCount: number;
+  thirdsCount: number;
+  awards: GlobalRankingAward[];
 }
 
 export interface ApiErrorBody {

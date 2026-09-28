@@ -45,6 +45,12 @@ import type {
   CertificateTemplate,
   GalleryCertificate,
   PublicCertificate,
+  Comment,
+  CommentWithAuthor,
+  GlobalAwardKind,
+  GlobalPointsConfigRow,
+  GlobalRankingDrilldown,
+  LeaderboardPage,
   VerificationRow,
   ApiErrorBody,
 } from '@raptor/shared';
@@ -182,6 +188,7 @@ export type EventTimelineInput = {
   votingClosesAt: string;
   votingWinnerAnnounceAt: string;
   eventClosedAt: string;
+  commentsEnabled?: boolean;
 };
 
 export function listEvents(phase?: string) {
@@ -779,4 +786,52 @@ export function getUserCertificateGallery(userId: string) {
 // blob/fetch plumbing on this side.
 export function certificateDownloadUrl(id: string): string {
   return `${API_URL}/certificates/${id}/download`;
+}
+
+// --- Comments (Module 13) ---
+
+export function listComments(submissionId: string, includeDeleted?: boolean) {
+  const query = includeDeleted ? '?includeDeleted=true' : '';
+  return apiFetch<CommentWithAuthor[]>(`/submissions/${submissionId}/comments${query}`);
+}
+
+export function createComment(submissionId: string, body: string) {
+  return apiFetch<Comment>(`/submissions/${submissionId}/comments`, { method: 'POST', body: { body } });
+}
+
+export function updateComment(commentId: string, body: string) {
+  return apiFetch<Comment>(`/comments/${commentId}`, { method: 'PATCH', body: { body } });
+}
+
+export function deleteComment(commentId: string, reason?: string) {
+  return apiFetch<Comment>(`/comments/${commentId}`, { method: 'DELETE', body: { reason } });
+}
+
+// --- Global Ranking (Module 14) — public ---
+
+export function getGlobalLeaderboard(page = 1, limit = 20, search?: string) {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (search?.trim()) params.set('search', search.trim());
+  return apiFetch<LeaderboardPage>(`/global-ranking?${params.toString()}`);
+}
+
+export function getGlobalRankingDrilldown(userId: string) {
+  return apiFetch<GlobalRankingDrilldown>(`/global-ranking/${userId}`);
+}
+
+// --- Global Ranking (Module 14) — admin ---
+
+export function getGlobalPointsConfig() {
+  return apiFetch<GlobalPointsConfigRow[]>('/admin/global-ranking/points-config');
+}
+
+export function updateGlobalPointsConfig(awardKind: GlobalAwardKind, points: number) {
+  return apiFetch<GlobalPointsConfigRow>(`/admin/global-ranking/points-config/${awardKind}`, {
+    method: 'PATCH',
+    body: { points },
+  });
+}
+
+export function triggerGlobalRankingRecompute(reason?: string) {
+  return apiFetch<{ triggered: true }>('/admin/global-ranking/recompute', { method: 'POST', body: { reason } });
 }

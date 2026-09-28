@@ -97,9 +97,19 @@ export class SubmissionsService {
   async getById(submissionId: string, caller: { id: string; siteAdmin: boolean } | null) {
     const submission = await this.getSubmissionOrThrow(submissionId);
 
+    // Module 13's comment composer needs to know whether comments are
+    // open for this submission's event without a second round-trip —
+    // this detail response had no event data joined at all before.
+    // Fetched once, used by both the owner and public-viewer branches
+    // below.
+    const event = await this.prisma.event.findUnique({
+      where: { id: submission.eventId },
+      select: { commentsEnabled: true },
+    });
+
     const owner = caller ? await this.isOwner(submission, caller.id) : false;
     if (owner) {
-      return this.toPublicSubmission(submission);
+      return { ...this.toPublicSubmission(submission), event };
     }
 
     if (submission.isDraft) {
@@ -112,23 +122,25 @@ export class SubmissionsService {
     // Submitted (non-draft): public from here — but an organizer/admin
     // additionally gets the verification-status panel the design doc
     // calls for, so it's still worth knowing which caller this is.
-    let verification: { finalDecision: string } | null = null;
+    // Module 13 reuses this same check: a `verification: null` response
+    // can't distinguish "stranger" from "organizer, no verification row
+    // yet" (getVerificationSummary returns null either way), so the
+    // comment-moderation "Remove" affordance needs its own explicit
+    // flag rather than inferring organizer status from that field.
+    let isOrganizerOrAdmin = false;
     if (caller?.siteAdmin) {
-      verification = await this.getVerificationSummary(submissionId);
+      isOrganizerOrAdmin = true;
     } else if (caller) {
       const organizerMembership = await this.prisma.eventMembership.findUnique({
         where: { userId_eventId: { userId: caller.id, eventId: submission.eventId } },
       });
-      if (
-        organizerMembership?.role === 'ORGANIZER' &&
-        organizerMembership.invitationStatus === 'ACCEPTED'
-      ) {
-        verification = await this.getVerificationSummary(submissionId);
-      }
+      isOrganizerOrAdmin =
+        organizerMembership?.role === 'ORGANIZER' && organizerMembership.invitationStatus === 'ACCEPTED';
     }
+    const verification = isOrganizerOrAdmin ? await this.getVerificationSummary(submissionId) : null;
 
     const submitterName = await this.getSubmitterName(submission);
-    return { ...this.toPublicSubmission(submission), submitterName, verification };
+    return { ...this.toPublicSubmission(submission), submitterName, verification, event, isOrganizerOrAdmin };
   }
 
   private async getSubmitterName(submission: Submission): Promise<string | null> {

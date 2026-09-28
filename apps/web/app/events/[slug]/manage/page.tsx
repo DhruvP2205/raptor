@@ -119,6 +119,32 @@ export default function ManageEventPage() {
         />
       </Card>
 
+      <Card className="mb-6 max-w-3xl">
+        <h2 className="mb-1 font-display text-lg text-ink">Comments</h2>
+        <p className="mb-3 text-xs text-ink-muted">
+          When off, no new comments can be posted — existing ones stay visible.
+        </p>
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input
+            type="checkbox"
+            checked={event.commentsEnabled}
+            disabled={actionLoading}
+            onChange={async (e) => {
+              setActionLoading(true);
+              setActionError(null);
+              try {
+                setEvent(await updateEvent(event.id, { commentsEnabled: e.target.checked }));
+              } catch (err) {
+                setActionError(err);
+              } finally {
+                setActionLoading(false);
+              }
+            }}
+          />
+          Comments enabled for this event
+        </label>
+      </Card>
+
       <Card className="max-w-3xl">
         <EventForm
           submitLabel="Save changes"

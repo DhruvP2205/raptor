@@ -13,8 +13,8 @@ export class GlobalRankingController {
 
   @Get()
   @Public()
-  getLeaderboard(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.globalRanking.getLeaderboard(Number(page) || 1, Number(limit) || 20);
+  getLeaderboard(@Query('page') page?: string, @Query('limit') limit?: string, @Query('search') search?: string) {
+    return this.globalRanking.getLeaderboard(Number(page) || 1, Number(limit) || 20, search);
   }
 
   @Get(':userId')

@@ -14,6 +14,9 @@ function makePrisma() {
     eventMembership: { findUnique: jest.fn() },
     teamMembership: { findFirst: jest.fn(), findUnique: jest.fn() },
     event: { findUnique: jest.fn() },
+    submissionVerification: { findUnique: jest.fn() },
+    team: { findUnique: jest.fn() },
+    user: { findUnique: jest.fn() },
     track: { count: jest.fn() },
   };
   return prisma;
@@ -415,15 +418,19 @@ describe('SubmissionsService', () => {
       expect(result.id).toBe('sub-1');
     });
 
-    it('a stranger (not owner, not organizer, not admin) gets a 404', async () => {
+    // Section 4/6 — once submitted (isDraft: false), a submission is
+    // public to anyone at all, stranger included; only a *draft* 404s
+    // for a non-owner. A stranger just never gets the organizer/admin
+    // -only verification panel alongside it.
+    it('a stranger (not owner, not organizer, not admin) can see a submitted submission, but gets no verification panel', async () => {
       const prisma = makePrisma();
       prisma.submission.findUnique.mockResolvedValue(SUBMITTED_SOLO);
       prisma.eventMembership.findUnique.mockResolvedValue(null);
       const service = new SubmissionsService(prisma, makeAudit() as any, makeMarkdown() as any);
 
-      await expect(
-        service.getById('sub-1', { id: 'stranger-1', siteAdmin: false } as any),
-      ).rejects.toBeInstanceOf(NotFoundException);
+      const result: any = await service.getById('sub-1', { id: 'stranger-1', siteAdmin: false } as any);
+      expect(result.id).toBe('sub-1');
+      expect(result.verification).toBeNull();
     });
   });
 

@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import { GlobalRankingService } from './global-ranking.service';
 
 function makePrisma() {
@@ -5,6 +6,7 @@ function makePrisma() {
     globalPointsConfig: { findMany: jest.fn().mockResolvedValue([]), upsert: jest.fn() },
     globalRankingSnapshot: { findFirst: jest.fn().mockResolvedValue(null) },
     globalRankingEntry: { count: jest.fn(), findMany: jest.fn(), findUnique: jest.fn() },
+    user: { findUnique: jest.fn() },
   } as any;
 }
 
@@ -151,28 +153,48 @@ describe('GlobalRankingService', () => {
   });
 
   describe('getUserDrilldown (Section 6 — per-person, on-demand)', () => {
-    it('returns null when there is no current snapshot at all', async () => {
+    it('throws NotFoundException for a userId with no matching account at all', async () => {
       const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue(null);
       const service = new GlobalRankingService(prisma, makeAudit() as any, makeRedis(), makeQueue() as any);
 
-      expect(await service.getUserDrilldown('user-1')).toBeNull();
+      await expect(service.getUserDrilldown('bogus-id')).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('returns null for a person not present in the current snapshot', async () => {
+    // design/14-global-ranking.md Section 3 — "profile still renders...
+    // a real, normal state for the majority of platform users, not an
+    // edge case to treat as broken." A real account with zero ranking
+    // data must never look identical to a nonexistent one.
+    it('returns a zeroed shell (not null, not 404) when there is no current snapshot at all', async () => {
       const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', displayName: 'Ada' });
+      const service = new GlobalRankingService(prisma, makeAudit() as any, makeRedis(), makeQueue() as any);
+
+      const result = await service.getUserDrilldown('user-1');
+      expect(result.displayName).toBe('Ada');
+      expect(result.rank).toBeNull();
+      expect(result.points).toBe(0);
+      expect(result.awards).toEqual([]);
+    });
+
+    it('returns a zeroed shell for a real person not present in the current snapshot', async () => {
+      const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-not-ranked', displayName: 'Bob' });
       prisma.globalRankingSnapshot.findFirst.mockResolvedValue({ id: 'snap-1' });
       prisma.globalRankingEntry.findUnique.mockResolvedValue(null);
       const service = new GlobalRankingService(prisma, makeAudit() as any, makeRedis(), makeQueue() as any);
 
-      expect(await service.getUserDrilldown('user-not-ranked')).toBeNull();
+      const result = await service.getUserDrilldown('user-not-ranked');
+      expect(result.displayName).toBe('Bob');
+      expect(result.awards).toEqual([]);
     });
 
     it('includes every award detail for a ranked person', async () => {
       const prisma = makePrisma();
+      prisma.user.findUnique.mockResolvedValue({ id: 'user-1', displayName: 'Ada' });
       prisma.globalRankingSnapshot.findFirst.mockResolvedValue({ id: 'snap-1' });
       prisma.globalRankingEntry.findUnique.mockResolvedValue({
         userId: 'user-1',
-        user: { id: 'user-1', displayName: 'Ada' },
         rank: 1,
         isTied: false,
         points: 10,
