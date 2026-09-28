@@ -232,6 +232,15 @@ separately by `votingOpensAt`/`votingClosesAt`. This means there's
 normally a real gap where the shortlist is public knowledge but voting
 hasn't opened yet — expected and intentional, not a bug.
 
+**Viewing the shortlist requires no authentication at all** (D161) —
+anyone, signed in or not, can see which submissions are up for
+audience choice. Only *casting a vote* is gated, and only by the two
+existing rules that have applied since D43/D44: the organizer's chosen
+eligibility mode and the account-age cutoff. Don't conflate "can this
+person vote" with "can this person see the ballot" — they're
+independent questions with different (and much looser) answers on the
+viewing side.
+
 **Minor correction vs. full round restart (voting)**
 Two different-weight fixes for a voting round, not to be confused:
 - **Minor correction** — cosmetic only (a typo, a wrong-project swap on

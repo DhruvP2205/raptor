@@ -20,6 +20,11 @@ export class PublicVotingController {
     private readonly results: VotingResultsService,
   ) {}
 
+  // D161 — viewing the shortlist requires no authentication at all;
+  // only casting a vote is gated (by D43/D44, enforced in castVote).
+  // This route was already @Public() before D161 formalized it — the
+  // decision closed a previously-unstated gap on the read side, it
+  // didn't change enforcement here.
   @Get('shortlist')
   @Public()
   getShortlist(@Param('eventId') eventId: string) {

@@ -77,6 +77,11 @@ export default function VotingBallotPage() {
   const [captchaBusy, setCaptchaBusy] = useState(false);
   const [captchaError, setCaptchaError] = useState<string | null>(null);
 
+  // D161 — this page is deliberately not behind useRequireAuth(): viewing
+  // the shortlist requires no authentication at all. Only casting a vote
+  // is gated (by D43/D44, enforced server-side in castVote) — eligibility
+  // below only picks which explanatory line to show, it never blocks the
+  // fetch or the render.
   useEffect(() => {
     getEvent(slug)
       .then(async (e) => {

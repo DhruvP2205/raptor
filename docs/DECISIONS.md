@@ -1737,3 +1737,26 @@ directly against the original Dogfood brief text that it is not
 mentioned anywhere in the brief — this is purely a feature from the
 reference implementation's own historical event catalog, not a
 platform requirement.**
+
+---
+
+## Voting — frontend visibility clarification (post-Module 14)
+
+**D161 — Confirmed: the voting shortlist is publicly viewable (no
+authentication required), while casting a vote remains gated by the
+two existing rules — organizer-chosen eligibility mode (D43) and the
+account-age cutoff (D44). Viewing and acting are independent; only the
+latter is restricted.**
+Context: this was an open question the frontend design pass surfaced —
+the original Module 11 backend design never explicitly stated whether
+an anonymous or ineligible visitor could *see* the shortlist, only that
+voting itself required eligibility. A frontend design doc initially
+resolved this unilaterally (reasoning it should follow the same
+public-view/gated-action pattern already used for results,
+`PublishedResultVersion`/D141), then that resolution was surfaced back
+explicitly and confirmed directly by the user rather than left as an
+assumption. Practical effect on the API: the shortlist read endpoint
+carries no auth requirement; the vote-casting endpoint's existing
+D43/D44 checks are unchanged and are the only enforcement point —
+this decision doesn't add a new backend rule, it closes a gap in what
+was previously unstated about the read side.
