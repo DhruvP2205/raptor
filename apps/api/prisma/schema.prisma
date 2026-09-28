@@ -15,11 +15,6 @@ datasource db {
 }
 
 // Module 1 (Auth & Email) — see docs/stages/01-auth-and-email-setup.md.
-//
-// Fields beyond this stage's scope — accountType, siteAdmin,
-// mustResetPassword — arrive with Module 2
-// (docs/stages/02-roles-and-membership.md Section 5). Do not add them
-// here ahead of that stage being implemented.
 model User {
   id           String  @id @default(uuid())
   email        String  @unique
@@ -44,10 +39,32 @@ model User {
   bannedAt     DateTime?
   bannedReason String?
 
+  // Module 2 (Roles & Membership) — see
+  // docs/stages/02-roles-and-membership.md Section 2. Set once, at
+  // creation, by whichever code path creates the account (self-signup
+  // always PARTICIPANT; admin-created staff accounts choose JUDGE or
+  // ORGANIZER) — never edited afterward, by design. No Prisma-level
+  // default: every creation path must be explicit about what it's
+  // creating, rather than silently relying on an implicit default.
+  accountType AccountType
+
+  // True for admin-created staff accounts until their first
+  // /auth/set-password call. Never true for self-signed-up participants.
+  mustResetPassword Boolean @default(false)
+
+  // Platform-operator flag, orthogonal to accountType. Provisioned only
+  // outside normal app flow (scripts/bootstrap-admin.ts) — there is no
+  // in-app "create a site admin" action.
+  siteAdmin Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   sessions Session[]
+
+  memberships     EventMembership[] @relation("MemberUser")
+  sentInvitations EventMembership[] @relation("InvitingUser")
+  auditLogEntries  AuditLog[]
 }
 
 model Session {
@@ -64,4 +81,108 @@ model Session {
   createdAt DateTime @default(now())
 
   @@index([userId])
+}
+
+enum AccountType {
+  PARTICIPANT
+  JUDGE
+  ORGANIZER
+}
+
+// Module 2 — deliberately minimal. Just enough to anchor
+// EventMembership and provide the judge-invitation deadline
+// (eventStartsAt). Module 3 (Event Management) extends this additively
+// — slug, description, status/phase, the full timeline, tracks, prizes,
+// file uploads. Nothing here should be read as Module 3's design; see
+// D59 in docs/DECISIONS.md for why this exists now at all.
+model Event {
+  id            String   @id @default(uuid())
+  name          String
+  eventStartsAt DateTime
+  createdAt     DateTime @default(now())
+
+  memberships EventMembership[]
+}
+
+enum EventRole {
+  PARTICIPANT
+  JUDGE
+  ORGANIZER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+// The single table every authorization guard checks (Section 4,
+// docs/stages/02-roles-and-membership.md) — no global role field is
+// ever consulted for event-scoped actions. Folds judge-invitation
+// lifecycle in directly rather than a separate JudgeInvitation table
+// (Section 5) — there's no point in this relationship's life where two
+// tables would represent it at different stages.
+model EventMembership {
+  id String @id @default(uuid())
+
+  userId String
+  user   User   @relation("MemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  role EventRole
+
+  // Judge track-scoping. Empty = all tracks. The field exists now per
+  // Section 5; the mechanics of actually scoping a judge's assignment
+  // by track are explicitly out of scope until judge assignment
+  // (Module 7+) — see Section 1's "Explicitly not in this stage."
+  trackIds String[] @default([])
+
+  // ACCEPTED immediately for organizer rows (D12, docs/DECISIONS.md) —
+  // there's no consent step for an already-vetted organizer account.
+  // Starts PENDING for judge rows. Only ACCEPTED rows grant any access,
+  // anywhere — a PENDING row exists in this table but must behave
+  // identically to no row at all for every guard check.
+  invitationStatus InvitationStatus @default(PENDING)
+
+  invitedByUserId String?
+  invitedBy       User?   @relation("InvitingUser", fields: [invitedByUserId], references: [id])
+  invitedAt       DateTime?
+  respondedAt     DateTime?
+
+  // Hashed, single-use, same pattern as every other token in this
+  // project (Module 1's session/verification tokens). No stored expiry
+  // snapshot for the token itself — deliberately resolved in
+  // docs/stages/03-event-management.md Section 4: the invitation
+  // deadline is always computed live as event.eventStartsAt, so an
+  // organizer editing the event's start date after invitations go out
+  // automatically moves the effective deadline for every still-PENDING
+  // invitation.
+  invitationTokenHash String? @unique
+
+  createdAt DateTime @default(now())
+
+  // One membership row per user per event — a user can't simultaneously
+  // hold two roles (or two separate pending invitations) on the same
+  // event.
+  @@unique([userId, eventId])
+}
+
+// Append-only. Every privileged or destructive action writes here —
+// see CLAUDE.md's non-negotiable principle 5. Never updated, never
+// deleted.
+model AuditLog {
+  id String @id @default(uuid())
+
+  actorUserId String
+  actor       User   @relation(fields: [actorUserId], references: [id])
+
+  action       String
+  metadataJson Json
+
+  createdAt DateTime @default(now())
+
+  @@index([actorUserId])
 }

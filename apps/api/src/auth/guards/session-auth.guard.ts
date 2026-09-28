@@ -4,20 +4,40 @@ import {
   type CanActivate,
   type ExecutionContext,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { SESSION_COOKIE_NAME, SessionService } from '../session.service';
 
-// Resolves a session cookie to a User, per
+// Global guard (registered as APP_GUARD in AuthModule) — resolves a
+// session cookie to a User on every request, per
 // docs/ARCHITECTURE.md Section 6 ("Every session resolves to a User via
-// an opaque token lookup (Module 1)"). This is the only mechanism later
-// modules' event-scoped role guards build on top of — it carries no
-// role/permission logic of its own, deliberately, per this stage's
-// scope.
+// an opaque token lookup (Module 1)"). This carries no role/permission
+// logic of its own, deliberately — later modules' event-scoped guards
+// (EventRoleGuard, Module 2) build on top of req.user, they don't
+// duplicate this resolution step.
+//
+// Being global means every new route is locked down by default; a
+// route has to opt out explicitly with @Public(), rather than every new
+// protected route needing someone to remember to add a guard. This is
+// the "default closed" posture CLAUDE.md's authorization principle
+// calls for, applied one level down from event-role checks.
 @Injectable()
 export class SessionAuthGuard implements CanActivate {
-  constructor(private readonly sessions: SessionService) {}
+  constructor(
+    private readonly sessions: SessionService,
+    private readonly reflector: Reflector,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(
+      IS_PUBLIC_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (isPublic) {
+      return true;
+    }
+
     const req = context.switchToHttp().getRequest<Request>();
     const rawToken = req.cookies?.[SESSION_COOKIE_NAME];
     if (!rawToken) {

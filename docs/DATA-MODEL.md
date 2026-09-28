@@ -4,14 +4,16 @@ The schema, table by table, and why each field exists. This is the
 human-readable narrative version of `apps/api/prisma/schema.prisma`.
 
 **Status note:** the schema described below is the cumulative target —
-every decision locked through Module 5 (Submission Management) plus the
-account-model changes from Module 2. `apps/api/prisma/schema.prisma` is
-built up **incrementally, stage by stage**, matching each stage doc's own
-declared scope — it is intentionally behind this document until every
-module below it has actually been implemented (e.g. `User.accountType`,
-`siteAdmin`, and `mustResetPassword` belong to Module 2 and won't exist
-in the Prisma schema until that module is built, even though they're
-documented here as part of the eventual `User` table). If the live
+every decision locked through Module 5 (Submission Management).
+`apps/api/prisma/schema.prisma` is built up **incrementally, stage by
+stage**, matching each stage doc's own declared scope. **Modules 1 and 2
+are implemented** (`User`, `Session`, `EventMembership`, `AuditLog`, and
+a deliberately minimal `Event` — see D59 in `DECISIONS.md` for why
+`Event` exists already even though full Event Management is Module 3).
+Everything from Module 3 onward (the real `Event` fields below —
+`slug`, `description`, `status`/`phase`, the full timeline, `Track`,
+`Prize` — plus `Team`, `Submission`) is still narrative-only; the live
+schema is intentionally behind this document for those. If the live
 schema and a field documented here disagree **and the owning module has
 already been implemented**, that's a bug. Certificates and voting are
 discussed extensively in `DECISIONS.md` but don't have a finalized stage
@@ -81,6 +83,13 @@ is ever consulted for event-scoped actions.
 ## 3. Events
 
 ### `Event`
+
+**Currently implemented (Module 2, D59): just `id`, `name`,
+`eventStartsAt`, `createdAt`.** Everything else in this section —
+`slug`, `description`, `status`/`phase`, `trackAttachmentMode`,
+`maxTeamSize`, the rest of the timeline, and the validation chain below
+— is Module 3's design, not yet in the Prisma schema. Module 3 extends
+the same table additively; none of it replaces what's there now.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -241,11 +250,17 @@ percentage/count are surfaced post-publication (D46).
 
 ### `AuditLog`
 
-Append-only. Every privileged or destructive action across every module
-writes here — role assignment, invitation actions, `siteAdmin` bypasses
-(D14), voting round resets with their mandatory reason, results
-publication. Never a bare `DELETE` anywhere in the schema without a
-corresponding audit entry for context.
+**Implemented (Module 2):** `id`, `actorUserId` (fk → User),
+`action` (string), `metadataJson` (json), `createdAt`. Append-only —
+`AuditService.record()` is the only write path, and nothing ever
+updates or deletes a row. Currently written by: `SITE_ADMIN_BYPASS`
+(every `EventRoleGuard` bypass), `STAFF_ACCOUNT_CREATED`,
+`ORGANIZER_ADDED`, `JUDGE_INVITED`, `JUDGE_INVITATION_RESENT`,
+`JUDGE_INVITATION_ACCEPTED`/`_DECLINED`. Every privileged or destructive
+action across every future module writes here too — role assignment,
+invitation actions, voting round resets with their mandatory reason,
+results publication. Never a bare `DELETE` anywhere in the schema
+without a corresponding audit entry for context.
 
 ---
 

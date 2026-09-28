@@ -150,18 +150,31 @@ templates with placeholder values and inline comments.
 
 ## 6. Authorization architecture
 
-- Every session resolves to a `User` via an opaque token lookup
-  (Module 1).
-- Every privileged route declares its requirement declaratively (e.g.
-  `@RequireEventRole(EventRole.ORGANIZER)`), and a guard resolves the
-  specific `eventId` from the request path and checks the current user's
-  `EventMembership` for **that event only** (Module 2) — never a global
-  role flag.
-- `siteAdmin` bypasses this check, but every bypass writes an
-  `AuditLog` entry — the power exists for genuine operational need, but
-  it's never invisible.
-- This is the **only** authorization path in the system. There is no
-  parallel "trust the frontend already checked" shortcut anywhere.
+Three guard layers, all in `apps/api/src/{auth,authz}/guards/`:
+
+1. **`SessionAuthGuard` (global, Module 1).** Resolves every request's
+   session cookie to a `User`, attached as `req.user`. Protected by
+   default — a route must opt out explicitly with `@Public()` (e.g.
+   signup, login, `/health`) rather than every new protected route
+   needing someone to remember to add a guard (D60).
+2. **`MustResetPasswordGuard` (global, registered after
+   `SessionAuthGuard`, Module 2).** An admin-created staff account with
+   `mustResetPassword: true` can reach exactly one route
+   (`POST /auth/set-password`, marked `@AllowWhileMustResetPassword()`)
+   until it changes its password — every other route, with no
+   exceptions, returns a specific `MUST_RESET_PASSWORD` error (D61).
+3. **`EventRoleGuard` (per-route, via `@UseGuards` + `@RequireEventRole`,
+   Module 2).** Resolves `:eventId` from the request path and checks the
+   current user's `EventMembership` for **that event only** — never a
+   global role flag. Fails loud (`InternalServerErrorException`) if
+   applied without the matching decorator, rather than silently passing
+   everything through (D62). `siteAdmin` bypasses this check, but every
+   bypass writes an `AuditLog` entry (who, route, event, required role)
+   — the power exists for genuine operational need, but it's never
+   invisible.
+
+This is the **only** authorization path in the system. There is no
+parallel "trust the frontend already checked" shortcut anywhere.
 
 ---
 
@@ -187,6 +200,10 @@ vs. where the clock currently sits) before being modeled as one enum.
 Documented here so it's clear what's intentionally not architected yet,
 rather than accidentally forgotten:
 
+- The shareable, not-yet-bound judge invitation link (Section 3.2 of
+  Module 2's stage doc, bullet 2) — direct-add by known email is
+  implemented; the generic link variant has no resolved data model yet
+  (D64). Revisit before claiming Module 2 fully done.
 - Judge assignment & scoring (Module 7+)
 - Normalization
 - Voting (rounds, anti-abuse, shortlist) — heavily discussed in

@@ -526,3 +526,115 @@ doc:**
    (stored for a future "active sessions" view, not read by any
    security decision yet), so "no value" is strictly better than "a
    value that doesn't do what its name implies."
+
+---
+
+## Roles & Membership implementation (Module 2, filled in during build)
+
+**D59 — A deliberately minimal `Event` table (just `id`, `name`,
+`eventStartsAt`) is introduced now, inside Module 2, even though Event
+Management is Module 3.**
+Context: Module 2's own stage doc assumes `Event` already exists —
+"the user who creates an event (`POST /events`) automatically becomes
+that event's first organizer," and the judge-invitation deadline is
+`event.eventStartsAt` — but `Event` is explicitly Module 3's scope, and
+the numbered build order puts Module 3 after Module 2. Flagged back to
+the user rather than decided silently; three options were offered
+(minimal anchor now / build Module 3 first / ship Module 2 partially
+and come back). **User chose the minimal anchor.** Module 3 extends this
+same table additively — slug, description, status/phase, the full
+timeline, tracks, prizes, file uploads — exactly the same
+build-additively pattern already used for `Submission`'s deliberately
+minimal field set (D27). The minimal `POST /events` built here is a
+throwaway stub Module 3 will replace wholesale, not a preview of that
+module's design.
+
+**D60 — `SessionAuthGuard` became a global guard with a `@Public()`
+opt-out, instead of staying a per-route `@UseGuards(SessionAuthGuard)`
+the way Module 1 left it.**
+Context: Module 2's stage doc frames the guard architecture ("every
+privileged route... never a global role flag") as the pattern every
+module after this one builds on. Manually remembering to add a guard to
+every new protected route, across ten more modules, is exactly the kind
+of thing that eventually gets forgotten once — a global guard makes
+"protected" the default and "public" the explicit, reviewable
+exception. Caught live during verification: `/health` broke (401) the
+moment this shipped, because it had no `@Public()` — fixed immediately,
+but it's a real example of the failure mode this pattern is meant to
+prevent for every *other* route going forward (the cost of forgetting
+shifts from "silently unprotected" to "loudly broken and caught
+immediately").
+Rejected: leaving `SessionAuthGuard` opt-in per route — matches what
+Module 1 shipped, but doesn't scale to "every module after this one."
+
+**D61 — `MustResetPasswordGuard` is also global (registered after
+`SessionAuthGuard`), with a matching `@AllowWhileMustResetPassword()`
+opt-in applied to exactly one route.**
+Context: Section 2.3 step 5 says a locked account can reach
+`POST /auth/set-password` and "no other route" — taken literally,
+including `/auth/logout` and `/auth/me`. The login/signup response
+itself now includes `mustResetPassword` (see `toPublicUser()` in
+`auth.service.ts`) specifically so a frontend can route straight to the
+set-password screen without ever needing to call `/auth/me` while
+locked — resolving what otherwise looks like a UX dead end without
+carving out an undocumented exception in the guard.
+
+**D62 — `EventRoleGuard` throws a loud `InternalServerErrorException` if
+applied to a route with no `@RequireEventRole` metadata, rather than
+silently allowing the request through.**
+Context: not written anywhere in the stage doc, but consistent with
+this project's repeated stance that authorization code must fail
+closed. A guard class applied without its matching decorator is a
+programming mistake, not a real authorization state — failing loud
+during development is far cheaper than silently open access in
+production.
+
+**D63 — Admin confirmation for staff-account creation uses the stage
+doc's own "simpler alternative": `confirm: true` on the *same* request,
+not a second `/admin/staff-accounts/confirm` call.**
+Context: Section 2.3 step 2 explicitly offers both as acceptable
+("e.g. a second... call, or a confirmation flag on the same request
+after a review screen"). The second-call version would need a stateful,
+short-lived confirmation token with its own expiry and storage — real
+complexity for a rarely-used admin action, when the doc already blesses
+a simpler shape. `@Equals(true)` on the DTO means confirm missing or
+false is rejected before the controller method runs at all; verified
+live against the real DB that omitting it creates nothing.
+
+**D64 — The shareable, not-yet-bound judge invitation link (Section
+3.2, bullet 2) is not implemented — direct-add (by known email) is
+fully implemented; the link variant is flagged as deferred, not
+decided.**
+Context: the doc says both "produce the same underlying record," but a
+link isn't addressed to a specific user at creation time — there's no
+`userId` to put on an `EventMembership` row until someone claims it,
+and the doc shows no "unclaimed invitation" shape anywhere. This is a
+genuine data-model gap, not an implementation detail, and didn't seem
+worth inventing under time pressure given how large the rest of this
+module already was. Revisit explicitly before claiming this part of
+Section 3.2 done.
+
+**D65 — Judge-invitation emails are not routed through `TEST_MODE`.**
+Context: Module 1's stage doc scopes `TEST_MODE` to exactly one call
+site (verification-email dispatch) and explicitly calls a second call
+site "scope creep... flag it and reverse." Judge invitations instead
+just log the link at `WARN` when SMTP isn't configured — enough for
+local/dev visibility without touching the flag Module 1 deliberately
+kept narrow. The acceptance suite, if it needs to test accept/decline
+without real inbox access, has the same options this project's own
+verification did: read the link from logs, or drive it at the service
+layer directly.
+
+**D66 — `prisma` stayed a dependency (not dev-only, per D56) and the
+Docker entrypoint now supports `exec "$@"` when the container is invoked
+with an explicit command** (`docker compose run --rm api node
+dist/scripts/bootstrap-admin.js`), **falling through to the default
+migrate-then-serve behavior otherwise.**
+Context: Section 2.4 requires `siteAdmin` provisioning to happen
+"outside normal app flow entirely" — no in-app button, ever. That still
+requires *some* runnable path in production, and it needs the same
+`DATABASE_URL` the entrypoint already constructs once (D56) — without
+this, the only way to reuse that construction would be a third copy of
+the same formula. Standard Docker entrypoint idiom; this is the only
+sanctioned way `scripts/bootstrap-admin.ts` is ever meant to run in a
+real deployment.

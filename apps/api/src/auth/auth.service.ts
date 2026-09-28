@@ -1,5 +1,4 @@
 import {
-  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -9,6 +8,8 @@ import * as argon2 from 'argon2';
 import { Prisma, type User } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { generateRawToken, sha256Hex } from '../common/crypto.util';
+import { normalizeEmail } from '../common/email.util';
+import { rejectExistingEmail } from '../common/reject-existing-email.util';
 import { MailNotConfiguredError, MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginDto } from './dto/login.dto';
@@ -38,42 +39,29 @@ export class AuthService {
     private readonly sessions: SessionService,
   ) {}
 
-  private normalizeEmail(email: string): string {
-    return email.trim().toLowerCase();
-  }
-
   private toPublicUser(user: User) {
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
+      accountType: user.accountType,
       emailVerifiedAt: user.emailVerifiedAt,
+      // The frontend needs this in the login/signup response itself to
+      // know to route straight to the set-password screen — every other
+      // route is unreachable while this is true (MustResetPasswordGuard),
+      // including /auth/me, so the frontend can't discover it by asking
+      // afterward.
+      mustResetPassword: user.mustResetPassword,
       createdAt: user.createdAt,
     };
   }
 
-  // Shared by the up-front check in signup() and by the concurrent
-  // -signup race recovery below — same distinct banned-vs-already
-  // -registered errors either way.
-  private rejectExistingEmail(user: User): never {
-    if (user.bannedAt) {
-      throw new ForbiddenException({
-        code: 'EMAIL_BANNED',
-        message: 'This email address is not permitted to register.',
-      });
-    }
-    throw new ConflictException({
-      code: 'EMAIL_ALREADY_REGISTERED',
-      message: 'An account with this email already exists.',
-    });
-  }
-
   async signup(dto: SignupDto, req: Request, res: Response) {
-    const email = this.normalizeEmail(dto.email);
+    const email = normalizeEmail(dto.email);
 
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
-      this.rejectExistingEmail(existing);
+      rejectExistingEmail(existing);
     }
 
     const passwordHash = await argon2.hash(dto.password);
@@ -92,6 +80,10 @@ export class AuthService {
           displayName: dto.displayName,
           verificationTokenHash,
           verificationTokenExpiresAt,
+          // Every self-signed-up account is a participant, full stop —
+          // see docs/stages/02-roles-and-membership.md Section 2.1.
+          // Staff accounts (JUDGE/ORGANIZER) are only ever admin-created.
+          accountType: 'PARTICIPANT',
         },
       });
     } catch (err) {
@@ -108,7 +100,7 @@ export class AuthService {
           where: { email },
         });
         if (concurrent) {
-          this.rejectExistingEmail(concurrent);
+          rejectExistingEmail(concurrent);
         }
       }
       throw err;
@@ -127,7 +119,7 @@ export class AuthService {
   }
 
   async login(dto: LoginDto, req: Request, res: Response) {
-    const email = this.normalizeEmail(dto.email);
+    const email = normalizeEmail(dto.email);
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     // Generic failure for both "no such user" and "wrong password" —
@@ -164,6 +156,17 @@ export class AuthService {
     await this.sessions.createSession(user.id, req, res);
 
     return { user: this.toPublicUser(user) };
+  }
+
+  // The only route reachable while mustResetPassword is true (enforced
+  // by MustResetPasswordGuard, not by this method) — see
+  // docs/stages/02-roles-and-membership.md Section 2.3 step 5.
+  async setPassword(userId: string, newPassword: string): Promise<void> {
+    const passwordHash = await argon2.hash(newPassword);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustResetPassword: false },
+    });
   }
 
   async logout(req: Request, res: Response): Promise<void> {
@@ -212,7 +215,7 @@ export class AuthService {
   }
 
   async resendVerification(dto: ResendVerificationDto) {
-    const email = this.normalizeEmail(dto.email);
+    const email = normalizeEmail(dto.email);
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     // Always the same generic response whether or not the account
