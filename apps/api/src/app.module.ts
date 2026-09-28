@@ -14,6 +14,7 @@ import { MailModule } from './mail/mail.module';
 import { MarkdownModule } from './markdown/markdown.module';
 import { MembershipModule } from './membership/membership.module';
 import { NormalizationModule } from './normalization/normalization.module';
+import { OrganizerSummaryModule } from './organizer-summary/organizer-summary.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PrizesModule } from './prizes/prizes.module';
 import { QueuesModule } from './queues/queues.module';
@@ -57,6 +58,7 @@ import { VotingModule } from './voting/voting.module';
     CertificatesModule,
     GlobalRankingModule,
     CommentsModule,
+    OrganizerSummaryModule,
   ],
   controllers: [AppController],
 })

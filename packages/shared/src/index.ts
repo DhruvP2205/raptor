@@ -23,6 +23,12 @@ export type RubricCriterionKind = 'SCORING' | 'BONUS' | 'SPECIAL_AWARD';
 // Module 3's computed-not-stored phase — see
 // apps/api/src/events/utils/event-phase.ts. null for a non-PUBLISHED
 // event.
+// Kept in sync with apps/api/src/events/utils/event-phase.ts's
+// authoritative list — JUDGING_CLOSED (Module 8, docs/stages/
+// 08-rubric-and-scoring.md Section 7) was missing here entirely until
+// Module 15 needed to key its "next recommended action" banner off it
+// (design/15-organizer-shell.md Section 3), a real type-drift bug this
+// pass caught: PhaseBadge's PHASE_TONE map had no entry for it either.
 export type EventPhase =
   | 'NOT_STARTED'
   | 'REGISTRATION_OPEN'
@@ -31,6 +37,7 @@ export type EventPhase =
   | 'SUBMISSIONS_OPEN'
   | 'SUBMISSIONS_CLOSED'
   | 'JUDGING'
+  | 'JUDGING_CLOSED'
   | 'RESULTS_ANNOUNCED'
   | 'VOTING_OPEN'
   | 'VOTING_CLOSED'
@@ -762,6 +769,31 @@ export interface GlobalRankingDrilldown {
   secondsCount: number;
   thirdsCount: number;
   awards: GlobalRankingAward[];
+}
+
+// Every section below is independently nullable — `null` means that
+// one section's own backend fetch failed, distinct from a genuine
+// zero/empty state, so each Overview card can show its own "Couldn't
+// load" + retry without the other eleven cards being affected
+// (design/15-organizer-shell.md Section 6's explicit requirement).
+export interface OrganizerSummary {
+  isAdminBypass: boolean;
+  tracksPrizes: { tracksCount: number; prizesCount: number } | null;
+  judges: { accepted: number; pending: number; declined: number } | null;
+  rubric: { scoringCount: number; bonusCount: number; configured: boolean } | null;
+  submissions: { finalizedCount: number } | null;
+  verification: { approved: number; pendingReview: number; disqualified: number } | null;
+  assignment: {
+    totalSubmissions: number;
+    assignedCount: number;
+    unassignedCount: number;
+    avgReviewsPerSubmission: number;
+  } | null;
+  progress: { percentComplete: number; judgesNotStarted: number; totalJudges: number } | null;
+  normalization: { lastRunAt: string | null; judgingStillOpen: boolean } | null;
+  results: { state: 'NOT_STARTED' | 'DRAFT' | 'PUBLISHED' } | null;
+  voting: { state: 'NOT_STARTED' | 'OPEN' | 'CLOSED'; roundNumber: number | null; votingClosesAt: string | null } | null;
+  certificates: { enabled: boolean; issuedCount: number } | null;
 }
 
 export interface ApiErrorBody {

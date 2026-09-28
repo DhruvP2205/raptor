@@ -24,6 +24,7 @@ export const PHASE_LABELS: Record<EventPhase, string> = {
   SUBMISSIONS_OPEN: 'Submissions open',
   SUBMISSIONS_CLOSED: 'Submissions closed',
   JUDGING: 'Judging',
+  JUDGING_CLOSED: 'Judging closed',
   RESULTS_ANNOUNCED: 'Results announced',
   VOTING_OPEN: 'Voting open',
   VOTING_CLOSED: 'Voting closed',

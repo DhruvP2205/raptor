@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { VotingResultsList } from '@/components/voting/VotingResultsList';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge, type Tone } from '@/components/ui/Badge';
@@ -426,7 +425,6 @@ export default function OrganizerVotingPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-1 font-display text-2xl text-ink">{event.name} — voting</h1>
       <p className="mb-6 text-sm text-ink-muted">Audience-choice shortlist, rounds, and results.</p>
 

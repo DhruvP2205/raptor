@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Card, Container } from '@/components/ui/Card';
@@ -164,7 +163,6 @@ export default function OrganizerCertificatesPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-1 font-display text-2xl text-ink">{event.name} — certificates</h1>
       <p className="mb-6 text-sm text-ink-muted">Template, the enable switch, and manual overrides.</p>
 

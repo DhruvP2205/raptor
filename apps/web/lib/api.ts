@@ -52,6 +52,7 @@ import type {
   GlobalRankingDrilldown,
   LeaderboardPage,
   VerificationRow,
+  OrganizerSummary,
   ApiErrorBody,
 } from '@raptor/shared';
 
@@ -834,4 +835,19 @@ export function updateGlobalPointsConfig(awardKind: GlobalAwardKind, points: num
 
 export function triggerGlobalRankingRecompute(reason?: string) {
   return apiFetch<{ triggered: true }>('/admin/global-ranking/recompute', { method: 'POST', body: { reason } });
+}
+
+// --- Organizer shell (Module 15) ---
+
+export function getOrganizerSummary(eventId: string) {
+  return apiFetch<OrganizerSummary>(`/events/${eventId}/organizer-summary`);
+}
+
+// `role` scopes the event switcher to events the caller actually
+// organizes (design/15-organizer-shell.md Section 2) — a siteAdmin
+// gets every event on the instance regardless of role, handled
+// server-side.
+export function getMyEvents(role?: 'ORGANIZER' | 'JUDGE' | 'PARTICIPANT') {
+  const params = role ? `?role=${role}` : '';
+  return apiFetch<PublicEvent[]>(`/events/mine${params}`);
 }

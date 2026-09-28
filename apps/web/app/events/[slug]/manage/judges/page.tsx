@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge, type Tone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -164,7 +163,6 @@ export default function ManageJudgesPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-1 font-display text-2xl text-ink">{event.name} — judges</h1>
       <p className="mb-6 text-sm text-ink-muted">
         Only accounts already created as judge-track staff accounts can be invited — see Admin -&gt;

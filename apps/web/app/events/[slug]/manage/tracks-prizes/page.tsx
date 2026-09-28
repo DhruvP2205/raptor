@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -296,7 +295,6 @@ export default function TracksPrizesPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-6 font-display text-2xl text-ink">{event.name} — tracks &amp; prizes</h1>
 
       <div className="grid gap-6 lg:grid-cols-2">

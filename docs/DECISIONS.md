@@ -1760,3 +1760,62 @@ carries no auth requirement; the vote-casting endpoint's existing
 D43/D44 checks are unchanged and are the only enforcement point —
 this decision doesn't add a new backend rule, it closes a gap in what
 was previously unstated about the read side.
+
+---
+
+## Design-review-audit findings 5 and 6, ratified
+
+**D162 — Confirmed: certificate download stays "disabled, not hidden"
+for viewers who can't download it, as the one deliberate exception to
+this design system's otherwise-absolute hide-don't-disable rule.**
+Context: `design-review-audit.md` Finding 5 flagged this as a rule
+break worth a deliberate yes/no rather than standing by default. The
+behavior was already built and tested this way in Module 12 (a disabled
+Download button with an inline explanation, confirmed live for both an
+anonymous visitor and the certificate owner). Reasoning ratified: seeing
+a disabled download confirms the certificate is real and exists, which
+is meaningfully different information than "an action exists" — worth
+keeping as the platform's one named exception rather than changing code
+to match a rule that doesn't serve this specific case well.
+
+**D163 — Deferred: Open Graph title/description tags for the event
+detail page, not built for now.** Context: `design-review-audit.md`
+Finding 6 flagged this as scope added to `03-event-management.md`
+without being asked for, and asked for an explicit yes/no. On closer
+look, building it for real requires this app's first server-side
+metadata fetch (`generateMetadata`) — the event detail page is fully
+client-rendered today (a deliberate scope cut from the original
+frontend build), so this isn't the "small, low-cost" addition the doc
+originally framed it as. Deferred as its own small task if wanted
+later, rather than either building it now at higher cost than scoped or
+silently dropping the doc's mention of it.
+
+---
+
+## Module 15 (organizer shell) sidebar reconciliation
+
+**D164 — Settings (the event edit form: name/description/timeline/
+poster/publish/archive/delete) gets its own sidebar item in the
+organizer shell, placed near the top alongside Tracks & prizes, rather
+than being folded into the new Overview dashboard.**
+Context: `15-organizer-shell.md`'s original sidebar list (10 items)
+never accounted for Settings at all, even though the new Overview
+dashboard displaces it from the `/manage` landing route it currently
+occupies — a real gap caught before implementation rather than
+guessed through. Confirmed: Settings and Tracks & prizes (also
+previously missing from the list) both get real sidebar slots,
+bringing the shell to 13 items total. Settings gets no Overview status
+card (see `15-organizer-shell.md` Section 3) since it isn't a pipeline
+stage with a summarizable status.
+
+**D165 — Submissions (Module 5's finalized-list page) and Verification
+(Module 6's review queue) stay as two separate sidebar items in the
+organizer shell, not merged into one.**
+Context: the shell doc's original "Submissions" Overview card
+described verification-queue data (approved/pending review/
+disqualified counts) while a plain `Submissions` sidebar label would
+suggest Module 5's simpler finalized-list page — the two are genuinely
+different existing tools with different data, and the doc's flat list
+only allocated one slot for what should have been two. Confirmed:
+keep both as distinct items, matching the interim `ManageNav`
+component (already listing both separately) that this shell replaces.

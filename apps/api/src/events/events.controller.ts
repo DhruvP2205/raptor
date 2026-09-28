@@ -44,9 +44,14 @@ export class EventsController {
 
   // Static route — must be declared before the dynamic ':slug' route
   // below, or Nest would try to match "mine" as a slug value.
+  // `role` filter and the siteAdmin all-events branch added for Module
+  // 15's shell event-switcher (design/15-organizer-shell.md Section 2,
+  // Section 6's testing requirement) — this route had no frontend
+  // caller before that, so extending it is behavior-preserving for
+  // every existing (nonexistent) consumer.
   @Get('mine')
-  listMine(@CurrentUser() user: User) {
-    return this.events.listMyEvents(user.id);
+  listMine(@CurrentUser() user: User, @Query('role') role?: EventRole) {
+    return this.events.listMyEvents(user, role);
   }
 
   @Get()

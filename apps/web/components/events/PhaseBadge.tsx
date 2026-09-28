@@ -16,6 +16,10 @@ const PHASE_TONE: Record<EventPhase, Tone> = {
   SUBMISSIONS_OPEN: 'live',
   SUBMISSIONS_CLOSED: 'neutral',
   JUDGING: 'live',
+  // Real gap this pass caught: JUDGING_CLOSED existed in the backend's
+  // phase enum (Module 8) but had no entry here at all — an event in
+  // this window would have hit PHASE_TONE[phase] === undefined.
+  JUDGING_CLOSED: 'neutral',
   RESULTS_ANNOUNCED: 'success',
   VOTING_OPEN: 'live',
   VOTING_CLOSED: 'neutral',

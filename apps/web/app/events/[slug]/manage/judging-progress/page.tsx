@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert } from '@/components/ui/Alert';
 import { Card, Container } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -66,7 +65,6 @@ export default function JudgingProgressPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-6 font-display text-2xl text-ink">{event.name} — judging progress</h1>
 
       <Card>

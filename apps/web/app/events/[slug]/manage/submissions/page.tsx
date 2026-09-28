@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
 import { Card, Container } from '@/components/ui/Card';
@@ -51,7 +50,6 @@ export default function ManageSubmissionsPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-2 font-display text-2xl text-ink">{event.name} — submissions</h1>
       <p className="mb-6 text-sm text-ink-muted">
         Organizers only see finalized submissions — drafts in progress are invisible here, by

@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { RankResultsList, SpecialAwardsList } from '@/components/results/ResultsLists';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge, type Tone } from '@/components/ui/Badge';
@@ -258,7 +257,6 @@ export default function OrganizerResultsPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-1 font-display text-2xl text-ink">{event.name} — results</h1>
       <p className="mb-6 text-sm text-ink-muted">Draft, publish, and correct the official results.</p>
 

@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge, type Tone } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -282,7 +281,6 @@ export default function AssignmentBoardPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl text-ink">{event.name} — assignments</h1>

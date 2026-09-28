@@ -5,5 +5,6 @@ import { AssignmentsService } from './assignments.service';
 @Module({
   controllers: [AssignmentsController],
   providers: [AssignmentsService],
+  exports: [AssignmentsService],
 })
 export class AssignmentsModule {}

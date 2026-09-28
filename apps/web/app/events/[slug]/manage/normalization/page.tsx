@@ -1,6 +1,5 @@
 'use client';
 
-import { ManageNav } from '@/components/events/ManageNav';
 import { Alert, ApiErrorAlert } from '@/components/ui/Alert';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -138,7 +137,6 @@ export default function NormalizationPage() {
 
   return (
     <Container className="py-10">
-      <ManageNav slug={slug} />
       <h1 className="mb-1 font-display text-2xl text-ink">{event.name} — normalization</h1>
       <p className="mb-6 text-sm text-ink-muted">Removes judge-to-judge scoring bias before ranking submissions.</p>
 

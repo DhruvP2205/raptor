@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { Event, User } from '@prisma/client';
+import type { Event, EventRole, User } from '@prisma/client';
 import { slugify } from '../common/slugify.util';
 import { MarkdownService } from '../markdown/markdown.service';
 import { MembershipService } from '../membership/membership.service';
@@ -270,9 +270,23 @@ export class EventsService {
   // Not named in the stage doc, but a necessary complement to
   // organizer-gated editing: an organizer needs some way to enumerate
   // their own events (including drafts) to manage them at all.
-  async listMyEvents(userId: string) {
+  //
+  // Optional `role` filter and the siteAdmin branch below are Module
+  // 15's addition (design/15-organizer-shell.md Section 6): the shell's
+  // event switcher needs "events I organize" specifically, not "every
+  // event I'm a member of in any role," and a siteAdmin's switcher
+  // lists every event on the instance regardless of membership — the
+  // same reach D62's bypass already grants them elsewhere.
+  async listMyEvents(user: { id: string; siteAdmin: boolean }, role?: EventRole) {
+    if (user.siteAdmin) {
+      const events = await this.prisma.event.findMany({
+        orderBy: { eventStartsAt: 'asc' },
+        include: { tracks: true, prizes: true, rubricCriteria: true },
+      });
+      return events.map((e) => this.toPublicEvent(e));
+    }
     const memberships = await this.prisma.eventMembership.findMany({
-      where: { userId, invitationStatus: 'ACCEPTED' },
+      where: { userId: user.id, invitationStatus: 'ACCEPTED', ...(role ? { role } : {}) },
       include: { event: true },
     });
     return memberships.map((m) => this.toPublicEvent(m.event));
