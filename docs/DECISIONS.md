@@ -767,3 +767,68 @@ something fixable from install flags. Redis-dependent code
 against a real `ioredis` client and unit-tested with a mocked one; live
 verification against a real Redis is deferred until Docker is
 available, same posture already recorded for Docker itself.
+
+## Team Management implementation (Module 4, filled in during build)
+
+**D75 — Three minimal anchors built ahead of their owning module, same
+pattern as D59: a participant event-registration endpoint, `Event.
+maxTeamSize`, and a minimal `Submission` table (`id`, `teamId`,
+`everSubmitted`, `createdAt` only).**
+Context: Module 4 structurally depends on all three existing, but none
+is named in Module 2 or Module 3's own stage doc — `POST
+/events/:eventId/register` (self-service, any `PARTICIPANT`-track
+account, immediately `ACCEPTED`, D20) isn't claimed by either prior
+module; `maxTeamSize` was already self-flagged as "Module 4's field" in
+DATA-MODEL.md's own Module 3 annotations; `Submission.everSubmitted` is
+needed now because the roster lock (D26) reads it. Each anchor is built
+to the smallest shape that satisfies what Module 4 actually reads —
+Module 5 is expected to extend `Submission` additively with its full
+field set (D27-D32), not redefine it.
+
+**D76 — The join-link prefix is `slugify(team name)` alone — no
+separate literal `"team-"` constant prepended on top.**
+Context: both the stage doc's format line and D23's planning-time
+wording read as `"team-" + {slugified-team-name} + "-" + {6-digit}`,
+which looks like a literal `"team-"` constant followed by the slug. But
+the stage doc's own worked example (name `Team Xmass` -> `team-xmass
+-482913`) only resolves under a different reading: slugifying the full
+name `"Team Xmass"` already produces `"team-xmass"` on its own (the
+word "Team" is part of the *name*, not a separate template piece) — so
+a literal `"team-"` prepended on top would double it to
+`"team-team-xmass"`, which the example doesn't show. Implemented as
+`joinLinkPrefix = slugify(name)`, with no added constant. Caught by a
+unit test (`createTeam` test asserting the derived prefix) failing
+against the first, literal-prefix implementation.
+
+**D77 — No generic "leave team" action exists for a non-admin member.**
+Context: Section 6/8 of the stage doc enumerate membership-management
+actions exhaustively — join (via link), kick, regenerate link, delete —
+and every one of them is admin-exclusive. A member who wants off a team
+has to ask the admin to kick them; there's no self-service exit. Read as
+deliberate (keeps team composition always admin-controlled under D22),
+not an oversight, but flagged in a code comment in `teams.service.ts`
+in case that reading is wrong.
+
+**D78 — Team-management routes are not event-scoped in the URL, except
+`POST /events/:eventId/teams` (creation, where the event context is
+required input).** `POST /teams/join`, `POST /teams/:id/regenerate-link`,
+`DELETE /teams/:id/members/:userId`, and `DELETE /teams/:id` all take
+just the team id (or, for join, the globally-unique join code) — no
+`eventId` in the path.
+Context: the stage doc's own literal endpoint shapes use exactly these
+non-nested paths. A team id (like an invitation-response token, D13's
+sibling pattern) is already globally unique, so there's no ambiguity an
+`eventId` prefix would resolve — it would be redundant routing, not
+added safety, since every handler still loads the team row and checks
+admin/membership against it directly.
+
+**D79 — `registerForEvent`'s returned `EventMembership` is passed
+through `toPublicMembership()` (stripping `invitationTokenHash`) even
+though the field is always `null` on a self-service registration row.**
+Context: the value itself isn't sensitive here (no token is ever issued
+for this path), but every other method in `MembershipService` that
+returns a membership to a controller goes through this same strip —
+leaving one path inconsistent would be a silent exception to a
+data-minimization rule with no corresponding benefit, and would get
+worse if this endpoint's behavior ever changed to conditionally set the
+field.

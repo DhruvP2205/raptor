@@ -65,6 +65,9 @@ model User {
   memberships     EventMembership[] @relation("MemberUser")
   sentInvitations EventMembership[] @relation("InvitingUser")
   auditLogEntries  AuditLog[]
+
+  adminOfTeams    Team[]           @relation("TeamAdmin")
+  teamMemberships TeamMembership[]
 }
 
 model Session {
@@ -119,6 +122,14 @@ model Event {
 
   status EventStatus @default(DRAFT)
 
+  // Module 4's field (Team Management), not Module 3's — flagged as
+  // not-yet-implemented in DATA-MODEL.md until now. Admin counts toward
+  // the total: maxTeamSize 4 means 1 admin + up to 3 more members, not
+  // 4 on top of the admin (Section 5, docs/stages/04-team-management.md).
+  // Defaults to 4 if not set at creation — an inferred default, not
+  // stated by either module's doc; see D75 in docs/DECISIONS.md.
+  maxTeamSize Int @default(4)
+
   // Timeline — all required at creation (Section 3.3's ordering chain
   // can't be validated against a partially-set timeline). UTC.
   registrationOpensAt    DateTime
@@ -138,6 +149,7 @@ model Event {
   memberships EventMembership[]
   tracks      Track[]
   prizes      Prize[]
+  teams       Team[]
 }
 
 enum EventStatus {
@@ -249,6 +261,79 @@ model EventMembership {
   // hold two roles (or two separate pending invitations) on the same
   // event.
   @@unique([userId, eventId])
+}
+
+// Module 4 (Team Management) — see docs/stages/04-team-management.md.
+model Team {
+  id      String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  // Immutable once set (D21-equivalent, Section 3) — no rename under
+  // any circumstance. Unique per event, not globally.
+  name String
+
+  // Fixed, non-transferable (Section 6) — no ownership-transfer
+  // mechanism anywhere. The only way this relationship ends is the team
+  // being deleted; there is no intermediate "team with no admin" state.
+  adminUserId String
+  admin       User   @relation("TeamAdmin", fields: [adminUserId], references: [id])
+
+  // Join code is `${joinLinkPrefix}-${joinLinkSuffix}`, e.g.
+  // "team-xmass-482913". joinLinkPrefix ("team-" + slugified name) is
+  // derived once at creation and never changes, since name never
+  // changes (Section 4.1). joinLinkSuffix is the actual rotating
+  // credential (Section 4.2) — regeneration only ever touches this
+  // field, invalidating the previous value immediately. The pair is
+  // globally unique (not just per event) because /teams/join resolves
+  // a team from the code alone, with no event in the URL.
+  joinLinkPrefix String
+  joinLinkSuffix String
+
+  createdAt DateTime @default(now())
+
+  members    TeamMembership[]
+  submission Submission?
+
+  @@unique([eventId, name])
+  @@unique([joinLinkPrefix, joinLinkSuffix])
+}
+
+model TeamMembership {
+  id     String @id @default(uuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  joinedAt DateTime @default(now())
+
+  // A user can only be on one team per event — enforced at the
+  // application layer by checking across all of an event's teams
+  // (there's no direct eventId column here to index on), not by a DB
+  // constraint on this table alone.
+  @@unique([teamId, userId])
+}
+
+// Module 5 — deliberately minimal anchor, same additive-growth pattern
+// already used for Event (D59). Module 4's roster lock (Section 6) is
+// explicitly keyed off `Submission.everSubmitted`, which has to exist
+// for that check to run at all, even though Module 5 (the module that
+// actually creates/submits/unsubmits these rows) isn't built yet — see
+// D76 in docs/DECISIONS.md. Module 5 extends this additively: title,
+// description, repoUrl, demoVideoUrl, liveUrl, trackIds,
+// submissionType, soloUserId, isDraft, submittedAt.
+model Submission {
+  id     String @id @default(uuid())
+  teamId String? @unique
+  team   Team?   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  // Set true on first successful submit, never reset — this is Module
+  // 5's field, but Module 4 reads it to decide whether a team's roster
+  // is still changeable. Never written by any code in this module.
+  everSubmitted Boolean @default(false)
+
+  createdAt DateTime @default(now())
 }
 
 // Append-only. Every privileged or destructive action writes here —

@@ -15,6 +15,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { RequireEventRole } from '../authz/decorators/require-event-role.decorator';
 import { EventRoleGuard } from '../authz/guards/event-role.guard';
+import { MembershipService } from '../membership/membership.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventsService } from './events.service';
@@ -22,11 +23,23 @@ import type { EventPhase } from './utils/event-phase';
 
 @Controller('events')
 export class EventsController {
-  constructor(private readonly events: EventsService) {}
+  constructor(
+    private readonly events: EventsService,
+    private readonly membership: MembershipService,
+  ) {}
 
   @Post()
   create(@CurrentUser() user: User, @Body() dto: CreateEventDto) {
     return this.events.createEvent(user, dto);
+  }
+
+  // Not named in either Module 2 or Module 3's stage doc, even though
+  // Module 4 explicitly depends on it existing — see D75 in
+  // docs/DECISIONS.md. Immediate, self-service, no event-role guard
+  // needed: any PARTICIPANT-track account can register for any event.
+  @Post(':eventId/register')
+  register(@Param('eventId') eventId: string, @CurrentUser() user: User) {
+    return this.membership.registerForEvent(eventId, user.id, user.accountType);
   }
 
   // Static route — must be declared before the dynamic ':slug' route

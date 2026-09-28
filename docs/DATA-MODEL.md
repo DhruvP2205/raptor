@@ -7,19 +7,22 @@ human-readable narrative version of `apps/api/prisma/schema.prisma`.
 every decision locked through Module 5 (Submission Management).
 `apps/api/prisma/schema.prisma` is built up **incrementally, stage by
 stage**, matching each stage doc's own declared scope. **Modules 1, 2,
-and 3 are implemented** (`User`, `Session`, `EventMembership`,
-`AuditLog`, the full `Event` table, `Track`, `Prize`). `Event` started
-as a deliberately minimal anchor in Module 2 (D59) and Module 3 grew it
-additively to the full shape below — `trackAttachmentMode` (Module 5)
-and `maxTeamSize` (Module 4) are still deliberately absent, along with
-`eventClosedAt` (voting, no locked stage doc yet). `Team` and
-`Submission` are still narrative-only; the live schema is intentionally
-behind this document for those. If the live schema and a field
-documented here disagree **and the owning module has already been
-implemented**, that's a bug. Certificates and voting are discussed
-extensively in `DECISIONS.md` but don't have a finalized stage doc yet,
-so their tables are sketched here as forward-looking and may
-still shift.
+3, and 4 are implemented** (`User`, `Session`, `EventMembership`,
+`AuditLog`, the full `Event` table including `maxTeamSize`, `Track`,
+`Prize`, `Team`, `TeamMembership`). `Event` started as a deliberately
+minimal anchor in Module 2 (D59) and Module 3 grew it additively to the
+full shape below; Module 4 added `maxTeamSize` the same way (D75).
+`trackAttachmentMode` (Module 5) is still deliberately absent, along
+with `eventClosedAt` (voting, no locked stage doc yet). `Submission`
+exists in the live schema only as a minimal anchor — `id`, `teamId`,
+`everSubmitted`, `createdAt` (D75) — Module 5 is expected to extend it
+additively to the full shape below, not redefine it. If the live schema
+and a field documented here disagree **and the owning module has
+already been implemented**, that's a bug, with the narrower exception
+of `Submission`'s still-anchor-only fields noted above. Certificates and
+voting are discussed extensively in `DECISIONS.md` but don't have a
+finalized stage doc yet, so their tables are sketched here as
+forward-looking and may still shift.
 
 ---
 
@@ -103,7 +106,7 @@ registration opens" supported use case (Section 8).
 | `status` | enum: `DRAFT \| PUBLISHED \| ARCHIVED \| DELETED` | Manual, actor-controlled (D15). `DELETED` reachable from DRAFT or PUBLISHED, not ARCHIVED (D70). |
 | ~~`trackAttachmentMode`~~ | — | **Not yet implemented** — Module 5's field, not Module 3's |
 | ~~`minTeamSize`~~ | — | No such field; a team can be admin-only (D25) |
-| ~~`maxTeamSize`~~ | — | **Not yet implemented** — Module 4's field, not Module 3's |
+| `maxTeamSize` | int, default 4 | **Implemented (Module 4, D75).** Admin counts toward the total (D25) |
 | Timeline fields (all `timestamptz`, UTC) | required at creation | `registrationOpensAt`, `registrationClosesAt`, `eventStartsAt`, `submissionsOpenAt`, `submissionsCloseAt`, `eventEndsAt`, `resultsAnnounceAt`, `votingOpensAt`, `votingClosesAt`, `votingWinnerAnnounceAt`. (`eventClosedAt` not yet implemented — voting's field, no locked stage doc.) |
 | *(computed, not stored)* `phase` | `EventPhase \| null` | Derived from `now()` vs. the timeline fields on every read (D15); `null` for non-PUBLISHED, `NOT_STARTED` for PUBLISHED-but-pre-registration (D69) |
 
@@ -145,6 +148,8 @@ Implemented (Module 3). No delete, same reasoning as `Track` (D74).
 
 ## 4. Teams
 
+**Implemented (Module 4).**
+
 ### `Team`
 
 | Field | Type | Notes |
@@ -152,7 +157,7 @@ Implemented (Module 3). No delete, same reasoning as `Track` (D74).
 | `id`, `eventId` | | A team belongs to exactly one event |
 | `name` | string, **immutable after creation** | Unique per event (D21) |
 | `adminUserId` | fk → User | Fixed, non-transferable (D22) — no `ownerId`-style field that implies transferability |
-| `joinLinkPrefix` | string | Derived once from the slugified name at creation; never regenerated since the name never changes |
+| `joinLinkPrefix` | string | `slugify(name)` alone, no added literal constant (D76) — derived once at creation, never regenerated since the name never changes |
 | `joinLinkSuffix` | string, 6-digit | The actual rotating credential — changed on regenerate (D23), old value invalidated immediately |
 | `createdAt` | | |
 
@@ -170,6 +175,14 @@ multiple members could hold simultaneously.
 ---
 
 ## 5. Submissions
+
+**Narrative shape below is the Module 5 target. The live schema has
+only a minimal anchor today** (`id`, `teamId`, `everSubmitted`,
+`createdAt`) **— built ahead of schedule in Module 4 because the team
+roster lock (D26) needs `everSubmitted` to read (D75).** Every other
+field below (`submissionType`, `soloUserId`, `title`, `description`,
+etc.) does not exist in the live schema yet; Module 5 adds them
+additively.
 
 ### `Submission`
 

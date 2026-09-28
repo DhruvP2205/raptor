@@ -1,9 +1,12 @@
 import {
   IsISO8601,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -26,6 +29,14 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  // Module 4's field (Team Management) — see D75 in docs/DECISIONS.md.
+  // Admin counts toward the total. Defaults to 4 if omitted.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  maxTeamSize?: number;
 
   @IsISO8601()
   registrationOpensAt!: string;

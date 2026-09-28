@@ -79,6 +79,7 @@ export class EventsService {
         name: dto.name,
         slug,
         description: dto.description ?? null,
+        ...(dto.maxTeamSize !== undefined ? { maxTeamSize: dto.maxTeamSize } : {}),
         ...timeline,
       },
     });
@@ -137,6 +138,7 @@ export class EventsService {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
         ...(dto.slug !== undefined ? { slug: dto.slug } : {}),
         ...(dto.description !== undefined ? { description: dto.description } : {}),
+        ...(dto.maxTeamSize !== undefined ? { maxTeamSize: dto.maxTeamSize } : {}),
         ...timelineUpdates,
       },
     });

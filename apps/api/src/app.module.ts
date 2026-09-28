@@ -10,6 +10,7 @@ import { MembershipModule } from './membership/membership.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { PrizesModule } from './prizes/prizes.module';
 import { RedisModule } from './redis/redis.module';
+import { TeamsModule } from './teams/teams.module';
 import { TracksModule } from './tracks/tracks.module';
 import { UploadsModule } from './uploads/uploads.module';
 
@@ -27,6 +28,7 @@ import { UploadsModule } from './uploads/uploads.module';
     TracksModule,
     PrizesModule,
     UploadsModule,
+    TeamsModule,
   ],
   controllers: [AppController],
 })

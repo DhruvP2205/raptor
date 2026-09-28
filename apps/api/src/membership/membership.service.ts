@@ -53,10 +53,13 @@ export class MembershipService {
   // D9/D10 (docs/DECISIONS.md): a PARTICIPANT-track account can never
   // hold a JUDGE/ORGANIZER membership row. No DB constraint ties
   // accountType to EventMembership.role, so every creation path must
-  // call this first.
+  // call this first. Extended to cover PARTICIPANT too (D75,
+  // docs/DECISIONS.md) — the same exclusivity is symmetric: a
+  // JUDGE/ORGANIZER-track account registering as a participant on some
+  // other event would be the same identity-mixing D9 rejects.
   assertAccountTypeMatchesRole(
     accountType: AccountType,
-    role: 'JUDGE' | 'ORGANIZER',
+    role: 'PARTICIPANT' | 'JUDGE' | 'ORGANIZER',
   ): void {
     if (accountType !== role) {
       throw new ForbiddenException({
@@ -64,6 +67,37 @@ export class MembershipService {
         message: `Only a ${role}-track account can hold a ${role} membership.`,
       });
     }
+  }
+
+  // Not named as this module's own scope by either Module 2 or Module
+  // 3's stage doc, even though Module 4 explicitly references
+  // `POST /events/:id/register` as an existing prerequisite ("Module
+  // 2/3 territory, referenced here for context") — see D75. Immediate,
+  // no acceptance step, same as organizer attachment: a participant
+  // registering for an event is self-service, there's no one else's
+  // consent involved.
+  async registerForEvent(eventId: string, userId: string, userAccountType: AccountType) {
+    this.assertAccountTypeMatchesRole(userAccountType, 'PARTICIPANT');
+
+    const existing = await this.prisma.eventMembership.findUnique({
+      where: { userId_eventId: { userId, eventId } },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: 'ALREADY_REGISTERED',
+        message: 'You are already registered for this event.',
+      });
+    }
+
+    const membership = await this.prisma.eventMembership.create({
+      data: {
+        eventId,
+        userId,
+        role: 'PARTICIPANT',
+        invitationStatus: 'ACCEPTED',
+      },
+    });
+    return toPublicMembership(membership);
   }
 
   // Organizer attachment is direct and immediate — no accept/decline

@@ -1,9 +1,12 @@
 import {
   IsISO8601,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -28,6 +31,16 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  // Lowering this below an already-formed team's current size doesn't
+  // retroactively kick anyone — it just blocks future joins. Not
+  // addressed by either module's doc; accepted as-is rather than
+  // inventing extra validation.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  maxTeamSize?: number;
 
   @IsOptional()
   @IsISO8601()

@@ -76,6 +76,41 @@ describe('MembershipService', () => {
     });
   });
 
+  describe('registerForEvent', () => {
+    it('rejects a non-PARTICIPANT account type', async () => {
+      const prisma = makePrisma();
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      await expect(
+        service.registerForEvent('event-1', 'u1', 'ORGANIZER' as any),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.eventMembership.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects registering twice for the same event', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue({ id: 'm1' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      await expect(
+        service.registerForEvent('event-1', 'u1', 'PARTICIPANT' as any),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it('creates an immediately-ACCEPTED PARTICIPANT row, no acceptance step', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue(null);
+      prisma.eventMembership.create.mockResolvedValue({ id: 'm1' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      await service.registerForEvent('event-1', 'u1', 'PARTICIPANT' as any);
+
+      expect(prisma.eventMembership.create).toHaveBeenCalledWith({
+        data: { eventId: 'event-1', userId: 'u1', role: 'PARTICIPANT', invitationStatus: 'ACCEPTED' },
+      });
+    });
+  });
+
   describe('addOrganizerDirect', () => {
     it('rejects when no organizer-track account exists with that email', async () => {
       const prisma = makePrisma();
@@ -303,6 +338,16 @@ describe('MembershipService', () => {
   // controller calls directly must never return it, even though it's
   // stored in the row. See docs/DECISIONS.md.
   describe('invitationTokenHash is never returned to a caller', () => {
+    it('registerForEvent', async () => {
+      const prisma = makePrisma();
+      prisma.eventMembership.findUnique.mockResolvedValue(null);
+      prisma.eventMembership.create.mockResolvedValue({ id: 'm1', invitationTokenHash: 'secret-hash' });
+      const service = new MembershipService(prisma as any, makeAudit() as any, makeMail() as any);
+
+      const result = await service.registerForEvent('event-1', 'u1', 'PARTICIPANT' as any);
+      expect(result).not.toHaveProperty('invitationTokenHash');
+    });
+
     it('addOrganizerDirect', async () => {
       const prisma = makePrisma();
       prisma.user.findUnique.mockResolvedValue({ id: 'u2', accountType: 'ORGANIZER' });
