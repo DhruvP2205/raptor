@@ -8,6 +8,7 @@ export interface EventTimeline {
   submissionsOpenAt: Date;
   submissionsCloseAt: Date;
   eventEndsAt: Date;
+  judgingClosesAt: Date;
   resultsAnnounceAt: Date;
   votingOpensAt: Date;
   votingClosesAt: Date;
@@ -21,6 +22,7 @@ export const TIMELINE_FIELDS: (keyof EventTimeline)[] = [
   'submissionsOpenAt',
   'submissionsCloseAt',
   'eventEndsAt',
+  'judgingClosesAt',
   'resultsAnnounceAt',
   'votingOpensAt',
   'votingClosesAt',
@@ -29,18 +31,22 @@ export const TIMELINE_FIELDS: (keyof EventTimeline)[] = [
 
 // registrationOpensAt < registrationClosesAt <= eventStartsAt
 //   < submissionsOpenAt < submissionsCloseAt <= eventEndsAt
-//   < resultsAnnounceAt < votingOpensAt < votingClosesAt
-//   < votingWinnerAnnounceAt
-// Two deliberate <= (not <): registrationClosesAt/eventStartsAt and
-// submissionsCloseAt/eventEndsAt are allowed to coincide — everything
-// else must be strictly ordered.
+//   < judgingClosesAt <= resultsAnnounceAt < votingOpensAt
+//   < votingClosesAt < votingWinnerAnnounceAt
+// Three deliberate <= (not <): registrationClosesAt/eventStartsAt and
+// submissionsCloseAt/eventEndsAt are allowed to coincide, and so is
+// judgingClosesAt/resultsAnnounceAt (Module 8, docs/stages/08-rubric-
+// and-scoring.md Section 7 — an organizer can announce results the
+// instant judging closes, zero gap) — everything else must be
+// strictly ordered.
 const ORDERING_CHAIN: [keyof EventTimeline, '<' | '<=', keyof EventTimeline][] = [
   ['registrationOpensAt', '<', 'registrationClosesAt'],
   ['registrationClosesAt', '<=', 'eventStartsAt'],
   ['eventStartsAt', '<', 'submissionsOpenAt'],
   ['submissionsOpenAt', '<', 'submissionsCloseAt'],
   ['submissionsCloseAt', '<=', 'eventEndsAt'],
-  ['eventEndsAt', '<', 'resultsAnnounceAt'],
+  ['eventEndsAt', '<', 'judgingClosesAt'],
+  ['judgingClosesAt', '<=', 'resultsAnnounceAt'],
   ['resultsAnnounceAt', '<', 'votingOpensAt'],
   ['votingOpensAt', '<', 'votingClosesAt'],
   ['votingClosesAt', '<', 'votingWinnerAnnounceAt'],

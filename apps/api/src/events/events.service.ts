@@ -26,6 +26,7 @@ function parseFullTimeline(dto: CreateEventDto): EventTimeline {
     submissionsOpenAt: new Date(dto.submissionsOpenAt),
     submissionsCloseAt: new Date(dto.submissionsCloseAt),
     eventEndsAt: new Date(dto.eventEndsAt),
+    judgingClosesAt: new Date(dto.judgingClosesAt),
     resultsAnnounceAt: new Date(dto.resultsAnnounceAt),
     votingOpensAt: new Date(dto.votingOpensAt),
     votingClosesAt: new Date(dto.votingClosesAt),
@@ -85,6 +86,9 @@ export class EventsService {
           : {}),
         ...(dto.maxProjectsPerJudge !== undefined
           ? { maxProjectsPerJudge: dto.maxProjectsPerJudge }
+          : {}),
+        ...(dto.finalScoreDisplayScale !== undefined
+          ? { finalScoreDisplayScale: dto.finalScoreDisplayScale }
           : {}),
         ...timeline,
       },
@@ -150,6 +154,9 @@ export class EventsService {
           : {}),
         ...(dto.maxProjectsPerJudge !== undefined
           ? { maxProjectsPerJudge: dto.maxProjectsPerJudge }
+          : {}),
+        ...(dto.finalScoreDisplayScale !== undefined
+          ? { finalScoreDisplayScale: dto.finalScoreDisplayScale }
           : {}),
         ...timelineUpdates,
       },
@@ -219,7 +226,7 @@ export class EventsService {
   ) {
     const event = await this.prisma.event.findUnique({
       where: { slug },
-      include: { tracks: true, prizes: true },
+      include: { tracks: true, prizes: true, rubricCriteria: true },
     });
     if (!event) {
       throw new NotFoundException();
@@ -250,7 +257,7 @@ export class EventsService {
     const events = await this.prisma.event.findMany({
       where: { status: 'PUBLISHED' },
       orderBy: { eventStartsAt: 'asc' },
-      include: { tracks: true, prizes: true },
+      include: { tracks: true, prizes: true, rubricCriteria: true },
     });
     const withPhase = events.map((e) => this.toPublicEvent(e));
     return phaseFilter
@@ -295,7 +302,7 @@ export class EventsService {
   }
 
   private toPublicEvent<
-    T extends Event & { tracks?: unknown; prizes?: unknown },
+    T extends Event & { tracks?: unknown; prizes?: unknown; rubricCriteria?: unknown },
   >(event: T) {
     return {
       ...event,

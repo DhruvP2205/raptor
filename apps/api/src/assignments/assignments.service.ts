@@ -352,6 +352,53 @@ export class AssignmentsService {
     return newAssignment;
   }
 
+  // Judge-facing: what has *this* judge been assigned, on this event.
+  // Not gated on APPROVED/etc. filtering beyond what's already true of
+  // any row in this table — a judge only ever sees their own queue,
+  // never other judges' assignments or identities.
+  async listMine(eventId: string, judgeUserId: string) {
+    return this.prisma.judgeAssignment.findMany({
+      where: { eventId, judgeId: judgeUserId },
+      include: { submission: { select: { id: true, title: true } } },
+      orderBy: { assignedAt: 'asc' },
+    });
+  }
+
+  // Section 6, docs/stages/07-judge-assignment.md's sibling module —
+  // actually specified in Module 8 Section 6 (live progress dashboard):
+  // per-judge total/COMPLETED/IN_PROGRESS/PENDING, always computed live
+  // from the current table state, never cached. Includes every
+  // ACCEPTED judge on the event, even one with zero assignments so far
+  // — an organizer needs to see who hasn't been given any work yet,
+  // not just how the ones with work are doing.
+  async progress(eventId: string) {
+    await this.getEventOrThrow(eventId);
+
+    const [judgeMemberships, assignments] = await Promise.all([
+      this.prisma.eventMembership.findMany({
+        where: { eventId, role: 'JUDGE', invitationStatus: 'ACCEPTED' },
+        include: { user: { select: { id: true, displayName: true, email: true } } },
+      }),
+      this.prisma.judgeAssignment.findMany({
+        where: { eventId, status: { in: ACTIVE_STATUSES } },
+        select: { judgeId: true, status: true },
+      }),
+    ]);
+
+    return judgeMemberships.map((jm) => {
+      const own = assignments.filter((a) => a.judgeId === jm.userId);
+      return {
+        judgeId: jm.userId,
+        displayName: jm.user.displayName,
+        email: jm.user.email,
+        total: own.length,
+        completed: own.filter((a) => a.status === 'COMPLETED').length,
+        inProgress: own.filter((a) => a.status === 'IN_PROGRESS').length,
+        pending: own.filter((a) => a.status === 'PENDING').length,
+      };
+    });
+  }
+
   private async getEventOrThrow(eventId: string): Promise<Event> {
     const event = await this.prisma.event.findUnique({ where: { id: eventId } });
     if (!event) {

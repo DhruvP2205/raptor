@@ -84,6 +84,25 @@ model User {
   // on the same table — Section 5, docs/stages/07-judge-assignment.md.
   reliabilityNotesAbout    JudgeReliabilityNote[] @relation("ReliabilityNoteSubject")
   reliabilityNotesAuthored JudgeReliabilityNote[] @relation("ReliabilityNoteAuthor")
+
+  // Module 9 (Normalization) — platform-wide, live-updating personal
+  // scoring-tendency profile (Section 3, docs/stages/09-normalization.md,
+  // D122). Recomputed after *every* submit-review this user makes, as
+  // judge, across all events ever — never reset per event. Defaults to
+  // 0/0/0 for a judge who has never completed a review; sampleCount is
+  // what's checked against the minimum-N=3 threshold (D123).
+  judgeCalibrationMean        Float @default(0)
+  judgeCalibrationStdDev      Float @default(0)
+  judgeCalibrationSampleCount Int   @default(0)
+
+  normalizationRunsTriggered NormalizationRun[] @relation("NormalizationRunAuthor")
+
+  // Module 10 — provenance only (who drafted/published/corrected a
+  // result), two distinct relation names since one user can plausibly
+  // do both for the same event (docs/stages/10-results-and-rankings.md
+  // Section 8).
+  resultsDraftsCreated       ResultsDraft[]            @relation("ResultsDraftCreator")
+  publishedResultVersions    PublishedResultVersion[]  @relation("ResultVersionPublisher")
 }
 
 model Session {
@@ -163,14 +182,27 @@ model Event {
   // precedent as maxTeamSize (D75).
   maxProjectsPerJudge Int @default(20)
 
+  // Module 8's field (Rubric & Scoring) — organizer-configured
+  // judge-input-scale-to-display-scale multiplier (Section 3.3,
+  // docs/stages/08-rubric-and-scoring.md). Deliberately never the same
+  // number as the 0-100 judge input scale — a judge always enters
+  // 0-100 per criterion regardless of what this is set to.
+  finalScoreDisplayScale Int @default(5)
+
   // Timeline — all required at creation (Section 3.3's ordering chain
   // can't be validated against a partially-set timeline). UTC.
+  // judgingClosesAt (Module 8, D108) sits between eventEndsAt and
+  // resultsAnnounceAt — Module 3's original design modeled judging as
+  // an implicit, unstored gap; this replaces that with a real,
+  // organizer-set boundary that submit-review/PATCH scores actually
+  // enforce (Section 7 there).
   registrationOpensAt    DateTime
   registrationClosesAt   DateTime
   eventStartsAt          DateTime
   submissionsOpenAt      DateTime
   submissionsCloseAt     DateTime
   eventEndsAt            DateTime
+  judgingClosesAt        DateTime
   resultsAnnounceAt      DateTime
   votingOpensAt          DateTime
   votingClosesAt         DateTime
@@ -191,6 +223,23 @@ model Event {
   // on the judge's User, not scoped by this relation — Section 5,
   // docs/stages/07-judge-assignment.md).
   judgeReliabilityNotes JudgeReliabilityNote[]
+
+  // Module 8 — the rubric, defined once as a whole set (Section 2,
+  // docs/stages/08-rubric-and-scoring.md) — see RubricCriterion's own
+  // comment for why this is a replace-the-whole-set write, not
+  // per-row CRUD like Track/Prize.
+  rubricCriteria RubricCriterion[]
+
+  // Module 9 — every normalization run ever triggered for this event;
+  // never overwritten or deleted by a later run (Section 6,
+  // docs/stages/09-normalization.md).
+  normalizationRuns NormalizationRun[]
+
+  // Module 10 — every draft/published version ever created for this
+  // event, across its whole history including superseded/unpublished
+  // ones (Section 8, docs/stages/10-results-and-rankings.md).
+  resultsDrafts            ResultsDraft[]
+  publishedResultVersions  PublishedResultVersion[]
 }
 
 enum EventStatus {
@@ -432,6 +481,17 @@ model Submission {
   // project), so this is a list, unlike verification's 1:1.
   judgeAssignments JudgeAssignment[]
 
+  // Module 9 — one NormalizedScore per normalization run this
+  // submission was included in (Section 9,
+  // docs/stages/09-normalization.md).
+  normalizedScores NormalizedScore[]
+
+  // Module 10 — one entry per published version this submission
+  // appears in, across the event's full correction history (Section 8,
+  // docs/stages/10-results-and-rankings.md).
+  rankResultEntries         RankResultEntry[]
+  specialAwardResultEntries SpecialAwardResultEntry[]
+
   // NULLs are distinct under Postgres's default unique-index semantics,
   // so this only constrains actual (eventId, soloUserId) pairs — it
   // doesn't limit how many TEAM rows (soloUserId always null) an event
@@ -585,6 +645,20 @@ model JudgeAssignment {
 
   assignedAt  DateTime  @default(now())
   completedAt DateTime?
+
+  // Module 8 (Rubric & Scoring) — the judge's actual scoring work
+  // against this assignment. review is 1:1 (one judge, one submission,
+  // one feedback text); scores/revisions are lists (one Score per
+  // rubric criterion, one ScoreRevision per submit-review call).
+  scores    Score[]
+  review    JudgeReview?
+  revisions ScoreRevision[]
+
+  // Module 9 — one snapshot per normalization run this assignment's
+  // rawTotal was ever fed into (Section 9,
+  // docs/stages/09-normalization.md) — a list, since the event can be
+  // (re-)normalized any number of times before resultsAnnounceAt.
+  normalizedScores NormalizedJudgeScore[]
 }
 
 enum AssignmentStatus {
@@ -622,6 +696,383 @@ model JudgeReliabilityNote {
   createdAt DateTime @default(now())
 
   @@index([judgeUserId])
+}
+
+// Module 8 (Rubric & Scoring) — see docs/stages/08-rubric-and-scoring.md
+// Section 2. Three kinds sharing one table, differentiated by `kind`
+// rather than three separate models — they're all "a thing a judge
+// scores while reviewing one submission," just with different valid
+// value ranges and different treatment in the final-score formula
+// (Section 3). Written as a whole-set replace
+// (PUT /events/:id/rubric-criteria, not per-criterion CRUD like
+// Track/Prize) because the SCORING kind's weightPercent values must
+// sum to exactly 100 across the *entire* set (D114) — a constraint
+// that can't be validated one row at a time.
+model RubricCriterion {
+  id      String @id @default(uuid())
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  kind RubricCriterionKind
+
+  label       String
+  description String
+
+  // SCORING only. Must sum to exactly 100 across an event's SCORING
+  // criteria (D114) — enforced in RubricCriteriaService, not here;
+  // Postgres has no native "these rows across the table sum to X"
+  // constraint.
+  weightPercent Int?
+
+  // BONUS only. Flat point value, never a percentage (Section 2.2).
+  maxPoints Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scores Score[]
+
+  // Module 10 — SPECIAL_AWARD criteria only in practice (Section 4,
+  // docs/stages/10-results-and-rankings.md), but not schema-restricted
+  // to that kind for the same reason Score isn't restricted either.
+  specialAwardResultEntries SpecialAwardResultEntry[]
+}
+
+enum RubricCriterionKind {
+  SCORING
+  BONUS
+  // Added retroactively (D129) — see stage doc Section 2.3. Never part
+  // of the rawTotal/finalScore formula; tallied separately by
+  // nomination count at results time (Module 10).
+  SPECIAL_AWARD
+}
+
+// Section 8, docs/stages/08-rubric-and-scoring.md. The live, current
+// value per judge per criterion — mutable by the assigning judge until
+// judgingClosesAt (D110). Valid range depends entirely on the parent
+// criterion's kind (SCORING: 0-100, BONUS: 0-maxPoints,
+// SPECIAL_AWARD: 0 or 1) — enforced at the application layer, since a
+// single `value` column can't carry a kind-conditional range check in
+// the schema itself.
+model Score {
+  id String @id @default(uuid())
+
+  judgeAssignmentId String
+  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
+
+  criterionId String
+  criterion   RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  value Int
+  note  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // One value per judge per criterion per assignment — a resubmit
+  // overwrites the existing row (Section 4.1's "the live, current
+  // value"), it never creates a second one.
+  @@unique([judgeAssignmentId, criterionId])
+}
+
+// One per JudgeAssignment (Section 8) — the judge's own-words
+// justification, required to complete submit-review (D112).
+model JudgeReview {
+  id String @id @default(uuid())
+
+  judgeAssignmentId String          @unique
+  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
+
+  overallFeedback String
+
+  // Most recent submit/resubmit timestamp — same "most recent, not
+  // original" pattern as Submission.submittedAt (Module 5, D31).
+  submittedAt DateTime
+
+  // Convenience counter, incremented on every resubmit — mirrors
+  // ScoreRevision.revisionNumber but avoids a COUNT query to display
+  // it. Both are always kept in sync by ScoringService, never derived
+  // independently.
+  revisionCount Int @default(0)
+}
+
+// Append-only, never edited or deleted (Section 5) — a full snapshot
+// per successful submit-review call, not a diff. Draft saves
+// (PATCH .../scores) never write here (D111) — only a validated,
+// completed submit does, which is what keeps this log meaningful
+// rather than filled with autosave noise.
+model ScoreRevision {
+  id String @id @default(uuid())
+
+  judgeAssignmentId String
+  judgeAssignment   JudgeAssignment @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
+
+  revisionNumber Int
+
+  // Every criterion's value + note as they stood at this submission —
+  // deliberately a full snapshot, not a diff (Section 5), so a past
+  // revision is readable on its own without replaying history.
+  scoresSnapshotJson    Json
+  overallFeedbackSnapshot String
+
+  submittedAt DateTime @default(now())
+
+  @@unique([judgeAssignmentId, revisionNumber])
+}
+
+// Module 9 (Normalization) — see docs/stages/09-normalization.md
+// Section 6/9. Manual, unlimited re-runs while judgingClosesAt <=
+// now() < resultsAnnounceAt (D126); permanently locked after
+// resultsAnnounceAt with no admin override — enforced in
+// NormalizationService, not here, same as every other server-time
+// deadline in this platform. Every run is independent; an earlier
+// run's rows are never overwritten or deleted by a later one.
+model NormalizationRun {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  runByUserId String
+  runByUser   User   @relation("NormalizationRunAuthor", fields: [runByUserId], references: [id])
+
+  runAt DateTime @default(now())
+
+  // Only method for this stage (Section 9) — a real enum anyway, not a
+  // bare string, so a future method addition is additive, not a schema
+  // rewrite.
+  method NormalizationMethod @default(Z_SCORE)
+
+  // Stored per-run, not read live from a platform constant at query
+  // time — historical accuracy if the platform default ever changes
+  // later (Section 9's own note).
+  minimumN Int
+
+  // This run's event-wide baseline (Section 4), frozen at run time —
+  // the minimum-N fallback target for judges below the threshold.
+  eventMean   Float
+  eventStdDev Float
+
+  judgeScores       NormalizedJudgeScore[]
+  normalizedScores  NormalizedScore[]
+
+  // Module 10 — every draft ever built against this run (Section 2,
+  // docs/stages/10-results-and-rankings.md); a run can be reselected by
+  // more than one draft over time.
+  resultsDrafts ResultsDraft[]
+}
+
+enum NormalizationMethod {
+  Z_SCORE
+}
+
+// One per judge per submission per run (Section 9) — ties a snapshot
+// to the specific review it was computed for. Every *At-run field is a
+// frozen copy, never a live reference back to User.judgeCalibration*
+// (Section 7's whole reason for existing) — a judge's global profile
+// keeps moving after this row is written, and this row must not move
+// with it.
+model NormalizedJudgeScore {
+  id String @id @default(uuid())
+
+  normalizationRunId String
+  normalizationRun   NormalizationRun @relation(fields: [normalizationRunId], references: [id], onDelete: Cascade)
+
+  judgeAssignmentId String
+  judgeAssignment   JudgeAssignment  @relation(fields: [judgeAssignmentId], references: [id], onDelete: Cascade)
+
+  // The input value at run time — Module 8's rawTotal, recomputed fresh
+  // from Score rows rather than read from a stored column (there isn't
+  // one; rawTotal is never persisted, per Module 8's own design).
+  rawTotal Float
+
+  judgeMeanAtRun    Float
+  judgeStdDevAtRun  Float
+  sampleCountAtRun  Int
+
+  // true if this judge was below minimum-N and eventMean/eventStdDev
+  // was used instead of their own personal figures (Section 4).
+  usedFallback Boolean
+
+  // true if judgeStdDevAtRun = 0 (Section 5.1) — flagged, never
+  // silently absorbed; visible to admin/organizer alongside the score.
+  uniformScoringFlagged Boolean
+
+  zScore Float
+
+  @@unique([normalizationRunId, judgeAssignmentId])
+}
+
+// One per submission per run (Section 9).
+model NormalizedScore {
+  id String @id @default(uuid())
+
+  normalizationRunId String
+  normalizationRun   NormalizationRun @relation(fields: [normalizationRunId], references: [id], onDelete: Cascade)
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  // Average of NormalizedJudgeScore.zScore across COMPLETED judges for
+  // this submission only — same non-responder exclusion rule as
+  // Module 8 (D116): a judge who never completed contributes to
+  // neither the sum nor the divisor.
+  averagedZScore Float
+
+  // This run's linear rescale of averagedZScore onto 0-100, using the
+  // actual min/max across every submission in this run.
+  rescaledValue Float
+
+  // Module 8's exact final step, reused as-is (Section 5) — the same
+  // output shape whether or not normalization ran.
+  finalScore Float
+
+  // Within this run only — dense ranking (ties share a rank), same
+  // convention Module 10 uses for the official results ranking; not
+  // itself the official ranking (that's Module 10's job), just this
+  // run's own ordering.
+  rank Int
+
+  @@unique([normalizationRunId, submissionId])
+}
+
+// Module 10 (Results & Rankings) — see
+// docs/stages/10-results-and-rankings.md Section 5.1. Private scratch
+// space: computed rank/special-award results are never persisted here
+// (they're computed on the fly for preview, and only actually written
+// as rows — RankResultEntry/SpecialAwardResultEntry — once a
+// PublishedResultVersion exists, Section 8). A draft is just a pointer
+// to a selected run plus organizer-controlled publish settings.
+model ResultsDraft {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  normalizationRunId String
+  normalizationRun   NormalizationRun @relation(fields: [normalizationRunId], references: [id])
+
+  // Gates auto-publish (Section 5.2) — an organizer must explicitly
+  // flip this to READY; AUTO mode never fires against an IN_PROGRESS
+  // draft even if resultsAnnounceAt has already passed (D136).
+  draftStatus DraftStatus @default(IN_PROGRESS)
+  publishMode PublishMode @default(MANUAL)
+
+  createdByUserId String
+  createdByUser   User   @relation("ResultsDraftCreator", fields: [createdByUserId], references: [id])
+  createdAt       DateTime @default(now())
+
+  publishedVersions PublishedResultVersion[]
+}
+
+enum DraftStatus {
+  IN_PROGRESS
+  READY
+}
+
+enum PublishMode {
+  AUTO
+  MANUAL
+}
+
+// Section 5.3/7 — immutable once created; a correction or unpublish
+// never edits a row here, only adds a new one or flips `status`
+// (D139). versionNumber is strictly increasing per event; only one
+// version is ever LIVE at a time in practice, but that's an
+// application-layer invariant (NormalizationService-style), not a
+// schema constraint.
+model PublishedResultVersion {
+  id String @id @default(uuid())
+
+  eventId String
+  event   Event  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  versionNumber Int
+  status        PublishedResultVersionStatus @default(LIVE)
+
+  // Null for a version created purely by a Section 7 correction with
+  // no new draft of its own (a correction reuses the same selected
+  // run's data, just with one override applied) — see Section 8's own
+  // note on this field.
+  resultsDraftId String?
+  resultsDraft   ResultsDraft? @relation(fields: [resultsDraftId], references: [id])
+
+  publishedByUserId String
+  publishedByUser   User     @relation("ResultVersionPublisher", fields: [publishedByUserId], references: [id])
+  publishedAt       DateTime @default(now())
+
+  // Required whenever this version resulted from a Section 7
+  // correction, not an original publish (D139) — enforced at the
+  // application layer, not the schema, same pattern as every other
+  // conditionally-required text field in this project.
+  correctionReason String?
+
+  // Required if status = UNPUBLISHED (Section 5.4, D137).
+  unpublishReason String?
+
+  rankEntries         RankResultEntry[]
+  specialAwardEntries SpecialAwardResultEntry[]
+
+  @@unique([eventId, versionNumber])
+}
+
+enum PublishedResultVersionStatus {
+  LIVE
+  SUPERSEDED
+  UNPUBLISHED
+}
+
+// One per submission per version (Section 8) — dense ranking, so
+// multiple entries can legitimately share the same `rank` within one
+// version when a tie survives the full cascade (Section 3, D132/D133).
+model RankResultEntry {
+  id String @id @default(uuid())
+
+  publishedResultVersionId String
+  publishedResultVersion   PublishedResultVersion @relation(fields: [publishedResultVersionId], references: [id], onDelete: Cascade)
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  rank Int
+
+  // Normally mirrors the selected NormalizationRun's
+  // NormalizedScore.finalScore for this submission; isScoreOverridden
+  // flags a Section 7 explicit-override correction, which is the only
+  // code path that ever sets displayScore to something else.
+  displayScore      Float
+  isScoreOverridden Boolean @default(false)
+
+  // Set by a Section 7 disqualify correction — excluded from
+  // ranking/award display going forward, but the row itself is never
+  // deleted (this platform's usual "never silently destroyed" rule).
+  isDisqualified Boolean @default(false)
+
+  @@unique([publishedResultVersionId, submissionId])
+}
+
+// One per (criterion, submission) per version (Section 8) — a
+// SPECIAL_AWARD criterion's computed winner(s) for this version,
+// Section 4's own tie-break cascade (distinct from RankResultEntry's).
+model SpecialAwardResultEntry {
+  id String @id @default(uuid())
+
+  publishedResultVersionId String
+  publishedResultVersion   PublishedResultVersion @relation(fields: [publishedResultVersionId], references: [id], onDelete: Cascade)
+
+  criterionId String
+  criterion   RubricCriterion @relation(fields: [criterionId], references: [id])
+
+  submissionId String
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  nominationCount Int
+
+  // True if this award was resolved via the tie-share outcome (Section
+  // 4's cascade end state, D140) rather than a clean win.
+  isShared Boolean @default(false)
+
+  @@unique([publishedResultVersionId, criterionId, submissionId])
 }
 
 // Append-only. Every privileged or destructive action writes here —

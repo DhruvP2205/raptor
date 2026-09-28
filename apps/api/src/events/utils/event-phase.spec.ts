@@ -11,10 +11,11 @@ function timeline(): EventTimeline {
     submissionsOpenAt: new Date(base + 3 * day),
     submissionsCloseAt: new Date(base + 4 * day),
     eventEndsAt: new Date(base + 5 * day),
-    resultsAnnounceAt: new Date(base + 6 * day),
-    votingOpensAt: new Date(base + 7 * day),
-    votingClosesAt: new Date(base + 8 * day),
-    votingWinnerAnnounceAt: new Date(base + 9 * day),
+    judgingClosesAt: new Date(base + 6 * day),
+    resultsAnnounceAt: new Date(base + 7 * day),
+    votingOpensAt: new Date(base + 8 * day),
+    votingClosesAt: new Date(base + 9 * day),
+    votingWinnerAnnounceAt: new Date(base + 10 * day),
   };
 }
 
@@ -42,6 +43,7 @@ describe('computeEventPhase', () => {
       [t.submissionsOpenAt, 'SUBMISSIONS_OPEN'],
       [t.submissionsCloseAt, 'SUBMISSIONS_CLOSED'],
       [t.eventEndsAt, 'JUDGING'],
+      [t.judgingClosesAt, 'JUDGING_CLOSED'],
       [t.resultsAnnounceAt, 'RESULTS_ANNOUNCED'],
       [t.votingOpensAt, 'VOTING_OPEN'],
       [t.votingClosesAt, 'VOTING_CLOSED'],

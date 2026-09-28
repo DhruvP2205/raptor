@@ -381,4 +381,68 @@ describe('AssignmentsService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
+
+  describe('listMine', () => {
+    it("only ever returns the calling judge's own assignments", async () => {
+      const prisma = makePrisma();
+      prisma.judgeAssignment.findMany.mockResolvedValue([{ id: 'a1', judgeId: 'judge-1' }]);
+      const service = new AssignmentsService(prisma, makeAudit() as any);
+
+      await service.listMine('event-1', 'judge-1');
+
+      expect(prisma.judgeAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { eventId: 'event-1', judgeId: 'judge-1' } }),
+      );
+    });
+  });
+
+  describe('progress (Module 8 Section 6 — live dashboard)', () => {
+    it('includes every ACCEPTED judge, even one with zero assignments so far', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUnique.mockResolvedValue(EVENT);
+      prisma.eventMembership.findMany.mockResolvedValue([
+        { userId: 'judge-busy', user: { id: 'judge-busy', displayName: 'Busy', email: 'b@x.com' } },
+        { userId: 'judge-idle', user: { id: 'judge-idle', displayName: 'Idle', email: 'i@x.com' } },
+      ]);
+      prisma.judgeAssignment.findMany.mockResolvedValue([
+        { judgeId: 'judge-busy', status: 'COMPLETED' },
+        { judgeId: 'judge-busy', status: 'PENDING' },
+        { judgeId: 'judge-busy', status: 'IN_PROGRESS' },
+      ]);
+      const service = new AssignmentsService(prisma, makeAudit() as any);
+
+      const result = await service.progress('event-1');
+
+      const busy = result.find((r) => r.judgeId === 'judge-busy')!;
+      expect(busy).toEqual(
+        expect.objectContaining({ total: 3, completed: 1, inProgress: 1, pending: 1 }),
+      );
+      const idle = result.find((r) => r.judgeId === 'judge-idle')!;
+      expect(idle).toEqual(
+        expect.objectContaining({ total: 0, completed: 0, inProgress: 0, pending: 0 }),
+      );
+    });
+
+    it('counts reflect live table state exactly, with no separate cached count path', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUnique.mockResolvedValue(EVENT);
+      prisma.eventMembership.findMany.mockResolvedValue([
+        { userId: 'judge-1', user: { id: 'judge-1', displayName: 'J', email: 'j@x.com' } },
+      ]);
+      prisma.judgeAssignment.findMany.mockResolvedValue([{ judgeId: 'judge-1', status: 'COMPLETED' }]);
+      const service = new AssignmentsService(prisma, makeAudit() as any);
+
+      const [result] = await service.progress('event-1');
+      expect(result.total).toBe(1);
+      expect(result.completed).toBe(1);
+
+      // The query only ever looks at "active" statuses live from the
+      // table — TRANSFERRED rows must never inflate a count.
+      expect(prisma.judgeAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ status: { in: ['PENDING', 'IN_PROGRESS', 'COMPLETED'] } }),
+        }),
+      );
+    });
+  });
 });

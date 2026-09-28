@@ -15,7 +15,8 @@ function validTimeline(): EventTimeline {
     submissionsOpenAt: new Date(base + 2 * day),
     submissionsCloseAt: new Date(base + 3 * day),
     eventEndsAt: new Date(base + 3 * day), // equal to submissionsCloseAt — allowed (<=)
-    resultsAnnounceAt: new Date(base + 4 * day),
+    judgingClosesAt: new Date(base + 4 * day),
+    resultsAnnounceAt: new Date(base + 4 * day), // equal to judgingClosesAt — allowed (<=)
     votingOpensAt: new Date(base + 5 * day),
     votingClosesAt: new Date(base + 6 * day),
     votingWinnerAnnounceAt: new Date(base + 7 * day),
@@ -37,6 +38,18 @@ describe('validateTimelineOrdering', () => {
     const t = validTimeline();
     t.eventEndsAt = t.submissionsCloseAt;
     expect(() => validateTimelineOrdering(t)).not.toThrow();
+  });
+
+  it('allows judgingClosesAt to equal resultsAnnounceAt (Module 8\'s documented <=, zero-gap results)', () => {
+    const t = validTimeline();
+    t.resultsAnnounceAt = t.judgingClosesAt;
+    expect(() => validateTimelineOrdering(t)).not.toThrow();
+  });
+
+  it('rejects eventEndsAt equal to judgingClosesAt (strict <, not <=)', () => {
+    const t = validTimeline();
+    t.judgingClosesAt = t.eventEndsAt;
+    expect(() => validateTimelineOrdering(t)).toThrow(BadRequestException);
   });
 
   it('rejects registrationOpensAt equal to registrationClosesAt (strict <, not <=)', () => {

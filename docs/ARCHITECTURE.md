@@ -237,11 +237,10 @@ vs. where the clock currently sits) before being modeled as one enum.
 ## 8. Deferred/not-yet-designed subsystems
 
 Documented here so it's clear what's intentionally not architected yet,
-rather than accidentally forgotten. Note the distinction from "not yet
-implemented": Modules 6-10 (Submission Verification through Results &
-Rankings) all have locked stage docs now — they belong in the module
-list, not this one, once implementation starts. What's actually listed
-here still has **no stage doc at all**:
+rather than accidentally forgotten. All ten currently-locked modules
+(Auth & Email through Results & Rankings) are implemented as of this
+update — what's actually listed here still has **no stage doc at
+all**:
 
 - The shareable, not-yet-bound judge invitation link (Section 3.2 of
   Module 2's stage doc, bullet 2) — direct-add by known email is

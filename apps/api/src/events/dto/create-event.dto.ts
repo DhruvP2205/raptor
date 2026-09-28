@@ -56,6 +56,16 @@ export class CreateEventDto {
   @Max(1000)
   maxProjectsPerJudge?: number;
 
+  // Module 8's field (Rubric & Scoring) — organizer-facing display
+  // scale, entirely separate from the 0-100 judge input scale (Section
+  // 2.1, docs/stages/08-rubric-and-scoring.md) — never conflate the
+  // two. Defaults to 5 if omitted.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  finalScoreDisplayScale?: number;
+
   @IsISO8601()
   registrationOpensAt!: string;
 
@@ -73,6 +83,13 @@ export class CreateEventDto {
 
   @IsISO8601()
   eventEndsAt!: string;
+
+  // Module 8's field (Rubric & Scoring) — see docs/stages/08-rubric-and-
+  // scoring.md Section 7. Required at creation like every other
+  // timeline field (the ordering chain can't be validated against a
+  // partially-set timeline).
+  @IsISO8601()
+  judgingClosesAt!: string;
 
   @IsISO8601()
   resultsAnnounceAt!: string;

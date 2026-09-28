@@ -58,6 +58,12 @@ export class UpdateEventDto {
   maxProjectsPerJudge?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(1000)
+  finalScoreDisplayScale?: number;
+
+  @IsOptional()
   @IsISO8601()
   registrationOpensAt?: string;
 
@@ -80,6 +86,10 @@ export class UpdateEventDto {
   @IsOptional()
   @IsISO8601()
   eventEndsAt?: string;
+
+  @IsOptional()
+  @IsISO8601()
+  judgingClosesAt?: string;
 
   @IsOptional()
   @IsISO8601()

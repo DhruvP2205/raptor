@@ -62,9 +62,20 @@ as previously designed:
 
 ```
 REGISTRATION_OPEN → REGISTRATION_CLOSED → IN_PROGRESS → SUBMISSIONS_OPEN
-  → SUBMISSIONS_CLOSED → JUDGING → RESULTS_ANNOUNCED → VOTING_OPEN
-  → VOTING_CLOSED → VOTING_WINNER_ANNOUNCED
+  → SUBMISSIONS_CLOSED → JUDGING → JUDGING_CLOSED → RESULTS_ANNOUNCED
+  → VOTING_OPEN → VOTING_CLOSED → VOTING_WINNER_ANNOUNCED
 ```
+
+**Amended by Module 8** (docs/stages/08-rubric-and-scoring.md Section
+7): `JUDGING_CLOSED` is a later addition, not part of this stage's
+original design. `JUDGING` now runs from `eventEndsAt` to the new
+`Event.judgingClosesAt` field (scoring actively happening);
+`JUDGING_CLOSED` runs from `judgingClosesAt` to `resultsAnnounceAt`
+(scores frozen, normalization/organizer review happening, nothing
+judge-facing writable). This stage's original design modeled the whole
+judging period as an implicit, unstored gap between `eventEndsAt` and
+`resultsAnnounceAt` — that's superseded now; the boundary is real,
+stored, and organizer-set.
 
 - Only meaningful once `status = PUBLISHED`. A `DRAFT` event's phase is
   `NOT_STARTED` / null — it hasn't begun its public timeline yet
@@ -118,9 +129,17 @@ at creation:
 ```
 registrationOpensAt < registrationClosesAt <= eventStartsAt
   < submissionsOpenAt < submissionsCloseAt <= eventEndsAt
-  < resultsAnnounceAt < votingOpensAt < votingClosesAt
-  < votingWinnerAnnounceAt
+  < judgingClosesAt <= resultsAnnounceAt < votingOpensAt
+  < votingClosesAt < votingWinnerAnnounceAt
 ```
+
+**Amended by Module 8** (docs/stages/08-rubric-and-scoring.md Section
+7): `judgingClosesAt` sits between `eventEndsAt` and `resultsAnnounceAt`
+— this stage's original chain went straight from `eventEndsAt` to
+`resultsAnnounceAt` with no boundary of its own in between. The `<=`
+(not strict `<`) between `judgingClosesAt` and `resultsAnnounceAt`
+lets an organizer announce results the instant judging closes, if they
+want zero gap for normalization/review.
 
 A violation is rejected with a specific error naming which pair is out of
 order — never a generic 400. `submissionsCloseAt` defaults to mirror

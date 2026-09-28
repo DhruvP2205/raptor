@@ -10,11 +10,16 @@ export type EventPhase =
   | 'SUBMISSIONS_OPEN'
   | 'SUBMISSIONS_CLOSED'
   | 'JUDGING'
+  | 'JUDGING_CLOSED'
   | 'RESULTS_ANNOUNCED'
   | 'VOTING_OPEN'
   | 'VOTING_CLOSED'
   | 'VOTING_WINNER_ANNOUNCED';
 
+// JUDGING_CLOSED — Module 8, docs/stages/08-rubric-and-scoring.md
+// Section 7. Runs from judgingClosesAt to resultsAnnounceAt: scores are
+// frozen (no more PATCH/submit-review, Section 4.2), normalization/
+// organizer review happens, nothing judge-facing is writable anymore.
 const PHASE_BOUNDARIES: { field: keyof EventTimeline; phase: EventPhase }[] = [
   { field: 'registrationOpensAt', phase: 'REGISTRATION_OPEN' },
   { field: 'registrationClosesAt', phase: 'REGISTRATION_CLOSED' },
@@ -22,6 +27,7 @@ const PHASE_BOUNDARIES: { field: keyof EventTimeline; phase: EventPhase }[] = [
   { field: 'submissionsOpenAt', phase: 'SUBMISSIONS_OPEN' },
   { field: 'submissionsCloseAt', phase: 'SUBMISSIONS_CLOSED' },
   { field: 'eventEndsAt', phase: 'JUDGING' },
+  { field: 'judgingClosesAt', phase: 'JUDGING_CLOSED' },
   { field: 'resultsAnnounceAt', phase: 'RESULTS_ANNOUNCED' },
   { field: 'votingOpensAt', phase: 'VOTING_OPEN' },
   { field: 'votingClosesAt', phase: 'VOTING_CLOSED' },

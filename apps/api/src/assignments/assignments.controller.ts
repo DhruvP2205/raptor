@@ -22,6 +22,21 @@ export class AssignmentsController {
     return this.assignments.listAssignableSubmissions(eventId);
   }
 
+  // Judge-facing — overrides the controller-level ORGANIZER requirement
+  // for this one route (EventRoleGuard's getAllAndOverride checks the
+  // handler first). A static sibling path segment, not a dynamic ':id'
+  // — no ambiguity with any other route on this controller.
+  @Get('mine')
+  @RequireEventRole(EventRole.JUDGE)
+  listMine(@Param('eventId') eventId: string, @CurrentUser() user: User) {
+    return this.assignments.listMine(eventId, user.id);
+  }
+
+  @Get('progress')
+  progress(@Param('eventId') eventId: string) {
+    return this.assignments.progress(eventId);
+  }
+
   @Get()
   list(
     @Param('eventId') eventId: string,
