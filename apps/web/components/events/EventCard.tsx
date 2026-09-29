@@ -3,7 +3,7 @@ import { resolveMediaUrl } from '@/lib/api';
 import { formatDate } from '@/lib/format';
 import type { PublicEvent } from '@raptor/shared';
 import Link from 'next/link';
-import { PhaseBadge } from './PhaseBadge';
+import { PhaseProgressBar } from './PhaseProgressBar';
 
 // The single most decision-relevant date for whatever phase the event
 // is actually in right now — "when do I need to act by," not just
@@ -63,7 +63,7 @@ export function EventCard({ event }: { event: PublicEvent }) {
           <div className="flex items-start justify-between gap-3">
             <h2 className="font-display text-base text-ink">{event.name}</h2>
           </div>
-          <PhaseBadge phase={event.phase} />
+          <PhaseProgressBar phase={event.phase} />
           {event.description && (
             <p className="line-clamp-2 text-sm text-ink-muted">{event.description}</p>
           )}

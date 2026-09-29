@@ -7,6 +7,7 @@ import type {
   JudgeProgress,
   MyAssignmentRow,
   OrganizerAuditLogPage,
+  PlatformStats,
   PublicEvent,
   PublicEventMembership,
   PublicUser,
@@ -827,6 +828,11 @@ export function updateComment(commentId: string, body: string) {
 
 export function deleteComment(commentId: string, reason?: string) {
   return apiFetch<Comment>(`/comments/${commentId}`, { method: 'DELETE', body: { reason } });
+}
+
+// docs/design/home-page.md Section 2.2 — homepage stat strip.
+export function getPlatformStats() {
+  return apiFetch<PlatformStats>('/stats/platform');
 }
 
 // --- Global Ranking (Module 14) — public ---

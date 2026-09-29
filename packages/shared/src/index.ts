@@ -362,6 +362,15 @@ export interface JudgeProgress {
   pending: number;
 }
 
+// docs/design/home-page.md Section 2.2 — GET /stats/platform, the
+// homepage stat strip. Three honest numbers, not four — "countries"
+// was dropped, no field anywhere captures a user's country.
+export interface PlatformStats {
+  eventsCount: number;
+  submissionsCount: number;
+  participantsCount: number;
+}
+
 // Module 24 (Release Closeout, B1) — GET /events/:eventId/audit-log,
 // organizer-facing (or siteAdmin, audited), cursor-paginated.
 export interface OrganizerAuditLogEntry {

@@ -2,14 +2,16 @@
 
 import { EventCard } from '@/components/events/EventCard';
 import { EventResultCard } from '@/components/events/EventResultCard';
+import { StatStrip } from '@/components/events/StatStrip';
+import { GlobalRankingTeaser } from '@/components/ranking/GlobalRankingTeaser';
 import { Container } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Field';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { cn } from '@/lib/cn';
-import { listEvents } from '@/lib/api';
+import { listEvents, getPlatformStats } from '@/lib/api';
 import { eventStage } from '@/lib/format';
-import type { PublicEvent } from '@raptor/shared';
+import type { PlatformStats, PublicEvent } from '@raptor/shared';
 import { useMemo, useState, useEffect } from 'react';
 
 type Tab = 'all' | 'live' | 'upcoming' | 'results';
@@ -29,13 +31,27 @@ const TABS: { key: Tab; label: string }[] = [
 // docs/DECISIONS.md).
 export default function HomePage() {
   const [events, setEvents] = useState<PublicEvent[] | null>(null);
+  // undefined = still loading, null = failed, object = loaded — kept
+  // distinct so a failed fetch shows nothing rather than an indefinite
+  // skeleton (docs/design/home-page.md Section 4: "that section shows
+  // its own inline error... the rest of the page is unaffected").
+  const [stats, setStats] = useState<PlatformStats | null | undefined>(undefined);
   const [tab, setTab] = useState<Tab>('all');
   const [query, setQuery] = useState('');
+
+  const loadStats = () => {
+    setStats(undefined);
+    getPlatformStats()
+      .then(setStats)
+      .catch(() => setStats(null));
+  };
 
   useEffect(() => {
     listEvents()
       .then(setEvents)
       .catch(() => setEvents([]));
+    loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const counts = useMemo(() => {
@@ -62,6 +78,10 @@ export default function HomePage() {
 
   return (
     <Container className="py-10">
+      <div className="mb-8">
+        <StatStrip stats={stats} onRetry={loadStats} />
+      </div>
+
       <div className="mb-6">
         <h1 className="font-display text-2xl text-ink">Hackathons</h1>
         <p className="mt-1 text-sm text-ink-muted">Everything currently published on this instance.</p>
@@ -115,6 +135,10 @@ export default function HomePage() {
           )}
         </div>
       )}
+
+      <div className="mt-12">
+        <GlobalRankingTeaser />
+      </div>
     </Container>
   );
 }

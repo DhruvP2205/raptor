@@ -7,27 +7,14 @@ import { Card, Container } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Field';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { RankGroupCard } from '@/components/ranking/RankGroupCard';
 import { getGlobalLeaderboard } from '@/lib/api';
-import type { LeaderboardEntry, LeaderboardPage } from '@raptor/shared';
+import { groupByRank } from '@/lib/ranking';
+import type { LeaderboardPage } from '@raptor/shared';
 import Link from 'next/link';
 import { Fragment, useEffect, useState } from 'react';
 
 const LIMIT = 20;
-
-// docs/design/14-global-ranking.md Section 2 — dense ranking, shared
-// positions grouped under one marker (Module 10's own reused pattern),
-// a compact firsts/seconds/thirds breakdown (counts, not sentences),
-// and a minimal toolbar (search only, matching the reference site
-// rather than over-building).
-function groupByRank(entries: LeaderboardEntry[]): LeaderboardEntry[][] {
-  const groups: LeaderboardEntry[][] = [];
-  for (const entry of entries) {
-    const last = groups[groups.length - 1];
-    if (last && last[0].rank === entry.rank) last.push(entry);
-    else groups.push([entry]);
-  }
-  return groups;
-}
 
 export default function LeaderboardPageRoute() {
   const [data, setData] = useState<LeaderboardPage | null>(null);
@@ -141,31 +128,7 @@ export default function LeaderboardPageRoute() {
 
           <div className="flex flex-col gap-3 md:hidden">
             {groups.map((group) => (
-              <Card key={group[0].rank} className="flex flex-col gap-3">
-                {group.map((entry, i) => (
-                  <div key={entry.userId} className="flex items-center justify-between gap-3">
-                    <Link href={`/users/${entry.userId}`} className="flex items-center gap-2">
-                      <span className="w-8 shrink-0 font-mono text-sm text-ink-muted">
-                        {i === 0 ? (entry.isTied ? `=${entry.rank}` : entry.rank) : ''}
-                      </span>
-                      <Avatar name={entry.displayName} id={entry.userId} size="small" />
-                      <span className="text-sm text-ink">{entry.displayName}</span>
-                    </Link>
-                    <div className="text-right">
-                      <p className="font-medium text-ink">{entry.points} pts</p>
-                      <p className="text-xs text-ink-muted">
-                        {entry.firstsCount > 0 && <span className="mr-1.5">1st ×{entry.firstsCount}</span>}
-                        {entry.secondsCount > 0 && <span className="mr-1.5">2nd ×{entry.secondsCount}</span>}
-                        {entry.thirdsCount > 0 && <span>3rd ×{entry.thirdsCount}</span>}
-                        {entry.firstsCount === 0 && entry.secondsCount === 0 && entry.thirdsCount === 0 && (
-                          <span>{entry.eventsCount} events</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {group.length > 1 && <Badge tone="neutral">Tied — sharing this position.</Badge>}
-              </Card>
+              <RankGroupCard key={group[0].rank} group={group} />
             ))}
           </div>
 

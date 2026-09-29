@@ -2874,3 +2874,86 @@ attempted this pass), 4.12 (needed a siteAdmin session not on hand;
 deferred to the existing passing `github-tokens.service.spec.ts`
 coverage), 5.1 (spot-checking UI-to-API equivalence — deferred given
 time already spent on the items above).
+
+---
+
+## `docs/design/home-page.md` — the homepage rebuilt against a real spec, two data gaps flagged first
+
+**D188 — `home-page.md` arrived as the real spec for the one page
+`FRONTEND-MEGA-DOC.md`'s site map had only ever summarized in three
+lines. Two of its requirements need data that doesn't exist anywhere
+in the schema — flagged back before building anything, not silently
+dropped or silently invented:**
+
+1. **A "countries" stat** — no field anywhere captures a user's
+   country. **User decided: drop it**, three honest numbers (events
+   run, projects submitted, participants) instead of four with one
+   guessed. Adding real country collection would be a genuine new
+   feature (signup-flow change, migration, its own privacy question),
+   not a stat-strip add-on.
+2. **Category filter pills** (e.g. "AI & ML," "Social Impact") — no
+   event-level category taxonomy exists; the existing `Track` concept
+   is per-submission, organizer-defined free text, not a fixed
+   per-event category list. **User decided: drop category pills,
+   keep the existing phase-based filter tabs** (All/Live/Upcoming/
+   Results) already on the homepage.
+
+**Scope decision made directly, not asked back:** the new spec
+describes two always-visible, fixed sections (Upcoming, horizontal
+scroll; Recent, grid) in place of a single filtered list — but its
+four-state filter tabs have no natural home in a two-section layout
+(a "Live now" event is neither upcoming nor recent/archived). Rather
+than force a fit, kept the existing single tab-filtered grid exactly
+as it already works (it already covers the same navigational need),
+and built every genuinely additive piece from the spec around it: a
+real stat strip, a real phase-progress bar, and a real Global Ranking
+teaser. A full structural rebuild into the two-fixed-section layout
+was not attempted — flagged here in case the two-section layout
+specifically (not just its data-driven pills) was the actual intent.
+
+**Built:**
+- **`GET /stats/platform`** (`PlatformStatsService`, `AppController`)
+  — published-events count, non-draft-submissions count, and distinct
+  accepted-participant count (`eventMembership.findMany` with
+  `distinct: ['userId']`, not a raw row count — one person registered
+  for five events counts once, not five times). 4 new tests.
+- **`PhaseProgressBar`** — the mega-doc's "6-segment lifecycle
+  indicator" component, actually built for the first time (referenced
+  by name in the component table, never implemented). The real
+  `EventPhase` enum has 12 values; grouped into the 6 stages a
+  participant actually experiences (registration → building → judging
+  → results → voting → complete) — a judgment call, not specified
+  anywhere, since no doc gives the literal 12-to-6 mapping. Replaces
+  `PhaseBadge` on `EventCard`, which is homepage-only (confirmed via
+  grep before changing it), so this doesn't touch any other page's
+  cards.
+- **`StatStrip`** — count-up-on-scroll via `IntersectionObserver`,
+  fires once; `prefers-reduced-motion` checked directly via
+  `matchMedia` (the existing global CSS only collapses CSS-driven
+  animation durations, not a JS `requestAnimationFrame` loop, so it
+  doesn't cover this on its own). Three explicit states (loading /
+  failed-with-inline-retry / loaded), not two — Section 4's own text
+  ("that section shows its own inline error + retry") was checked
+  again mid-build and corrected: the first pass silently hid the strip
+  on failure, which the spec doesn't actually ask for.
+- **`GlobalRankingTeaser`** + **`RankGroupCard`** (new,
+  `components/ranking/`) — the tied-rank card rendering was already
+  built once, inline, in last session's leaderboard mobile-card work
+  (D186); extracted into a shared component + a shared `groupByRank`
+  (`lib/ranking.ts`) so the teaser and the full leaderboard page use
+  the exact same tie rendering, per the spec's own "not a simplified
+  version that drops the tie." Hidden entirely (not an empty-state
+  card) when `snapshotId` is `null` — confirmed live against the real
+  fixture database, which genuinely has no computed snapshot yet, so
+  this path is exercised by real current data, not just a hypothetical.
+
+**Verified:** shared package + api + web all typecheck/build clean;
+512/512 backend tests passing (up from 508); `GET /stats/platform`
+confirmed live against the real database (1 published event, 40
+submissions, 91 distinct participants); homepage, leaderboard, and an
+event-detail page all confirmed rendering (`200`, clean compile) against
+a live dev server. **Honest limitation, same as D186/D187:** no
+browser automation in this sandbox — the count-up animation, the
+6-segment bar's visual appearance, and the teaser's final rendered
+layout were not confirmed by eye.
+
