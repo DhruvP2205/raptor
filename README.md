@@ -224,6 +224,34 @@ public-facing deployment:
 
 Full detail on each: `apps/api/.env.example`.
 
+> ⚠️ **Rate limiting fails open on a Redis outage** — `RateLimitService`
+> (`apps/api/src/redis/rate-limit.service.ts`) lets a request through,
+> uncapped, if Redis is unreachable, rather than rejecting it. This is a
+> deliberate, confirmed tradeoff, not an oversight: for anti-abuse
+> limiters (login, gallery, join-team, comments), losing the abuse
+> guard for the duration of an infra outage is acceptable; taking down
+> login/signup/the public gallery for every user because Redis hiccuped
+> is not. It applies to every limiter in the codebase, uniformly — none
+> of them fail closed. See `THREAT-MODEL.md` for the abuse-class
+> coverage this trades against.
+
+### 🚧 Known security debt
+
+> ⚠️ **`next@14.2.35` has two critical, unauthenticated-RCE advisories**
+> (GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4), fixed in `15.5.24+` — found
+> live via `pnpm audit` during the module-24 verification pass (69
+> vulnerabilities total: 2 critical, 24 high, 35 moderate, 8 low; the
+> two critical ones are the only ones that matter here). **Not yet
+> upgraded.** A Next.js 14→15 major-version bump is a real,
+> separately-scoped piece of work — breaking-change risk across all
+> ~30 frontend pages (App Router changes, async `params`/`searchParams`,
+> React 19 baseline) — not something to fold silently into an unrelated
+> pass. Anyone deploying this publicly should treat the 14→15 upgrade as
+> the first thing to schedule, before anything else in this backlog —
+> it's the one item on this list that turns "self-hostable" into
+> "self-hostable, but exposed" if left as-is. Tracked in
+> `docs/DECISIONS.md` (search for "pnpm audit").
+
 ---
 
 ## 🎭 Demo environment

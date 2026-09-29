@@ -2957,3 +2957,37 @@ browser automation in this sandbox — the count-up animation, the
 6-segment bar's visual appearance, and the teaser's final rendered
 layout were not confirmed by eye.
 
+---
+
+## Closing out two VERIFICATION.md flags: fail-open confirmed intentional, Next.js 14→15 scoped and surfaced in README
+
+**D189 — Two items left open by D187's verification pass (4.7/8 fail-open
+posture, 4.10's `pnpm audit` findings) needed a real answer rather than
+sitting as findings nobody acted on.**
+
+Asked directly whether `RateLimitService`'s fail-open-on-Redis-outage
+behavior is the intended production posture, rather than assuming it
+either way. **Confirmed: yes, intentional** — for every limiter in the
+codebase (login, gallery, join-team, comments), losing the anti-abuse
+guard for the duration of a Redis outage is an acceptable trade against
+taking down login/signup/the public gallery for every user. This was
+already the code's own stated design (see the comment in
+`rate-limit.service.ts`); the point of asking was to get it confirmed
+as a decision on record, not to leave a "someone should check this"
+gap in `docs/DECISIONS.md` open indefinitely. No code changed.
+
+Added both items to `README.md`, in `Configuration & secrets` →
+`Production hardening`, where a self-hoster is already reading about
+production-readiness settings:
+- an explicit callout documenting the fail-open confirmation and its
+  reasoning, so it reads as a decision, not an oversight;
+- a new "🚧 Known security debt" callout for the two critical,
+  unauthenticated-RCE advisories `pnpm audit` found in `next@14.2.35`
+  (D187/4.10), stating plainly that the 14→15 upgrade is unscheduled,
+  scoping why (breaking-change risk across ~30 pages, App Router/async-
+  params/React 19 changes), and naming it — explicitly — as the one
+  item on this project's backlog that could turn "self-hostable" into
+  "self-hostable, but exposed" if a real deployer skips it.
+
+No functional code touched this pass — documentation only, closing out
+findings rather than generating new ones.
