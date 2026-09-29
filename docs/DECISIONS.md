@@ -2991,3 +2991,35 @@ production-readiness settings:
 
 No functional code touched this pass — documentation only, closing out
 findings rather than generating new ones.
+
+---
+
+## Module 25 scoped: the Next.js 14→15 upgrade gets its own stage doc
+
+**D190 — "Schedule it" meant give the 14→15 upgrade the same treatment
+every other real piece of work in this project gets: a numbered stage
+doc, checked against the actual codebase, not just a README callout
+promising it'll happen someday.**
+
+Wrote `docs/design/25-nextjs-upgrade.md` — **Module 25, design locked,
+not yet built.** Before writing it, actually checked how much of Next
+15's real breaking-change surface (async `cookies()`/`headers()`/
+`params`/`searchParams`, changed `fetch` caching defaults) this
+codebase touches: zero server-side `params`/`searchParams` usage (every
+dynamic route is `'use client'` + `useParams()`), no `generateMetadata`,
+no route handlers, no `next/headers`, no `next/image`, no middleware,
+no third-party UI library with its own React peer-dependency pin, and
+`node:22-alpine` already well above Next 15's `>=18.18` floor. The
+upgrade is real work (React 18→19 bump, a full ~30-route regression
+pass, re-verifying the two effect-driven homepage components built this
+session under Strict Mode) but is not the sprawling, every-page-at-risk
+undertaking D187/D189 initially assumed before anyone actually checked
+— corrected the doc's own framing rather than carrying the pessimistic
+version forward.
+
+Updated `README.md`'s "🚧 Known security debt" callout to link to
+`docs/design/25-nextjs-upgrade.md` instead of just naming the CVEs and
+asserting it's unscheduled — it no longer is. The callout stays until
+Module 25 actually ships and `pnpm audit` confirms both advisories
+gone (the module's own stated done-condition, N6) — that's when the
+callout gets deleted, not before.

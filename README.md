@@ -242,15 +242,19 @@ Full detail on each: `apps/api/.env.example`.
 > live via `pnpm audit` during the module-24 verification pass (69
 > vulnerabilities total: 2 critical, 24 high, 35 moderate, 8 low; the
 > two critical ones are the only ones that matter here). **Not yet
-> upgraded.** A Next.js 14→15 major-version bump is a real,
-> separately-scoped piece of work — breaking-change risk across all
-> ~30 frontend pages (App Router changes, async `params`/`searchParams`,
-> React 19 baseline) — not something to fold silently into an unrelated
-> pass. Anyone deploying this publicly should treat the 14→15 upgrade as
-> the first thing to schedule, before anything else in this backlog —
-> it's the one item on this list that turns "self-hostable" into
-> "self-hostable, but exposed" if left as-is. Tracked in
-> `docs/DECISIONS.md` (search for "pnpm audit").
+> upgraded, but scheduled and scoped:** see
+> [`docs/design/25-nextjs-upgrade.md`](docs/design/25-nextjs-upgrade.md)
+> (Module 25) — a real audit of this codebase's actual Next 15
+> breaking-change exposure, not a guess. It's smaller than a typical
+> Next 14→15 bump (no server-side `params`/`searchParams`, no route
+> handlers, no `next/image` in use anywhere) but still a real
+> React 18→19 bump plus a full regression pass, so it's tracked as its
+> own module rather than folded silently into an unrelated one. Anyone
+> deploying this publicly should treat it as the first thing to pick
+> up from this backlog — it's the one item here that turns
+> "self-hostable" into "self-hostable, but exposed" if left as-is. This
+> callout comes down once Module 25 ships and `pnpm audit` confirms
+> both advisories gone.
 
 ---
 
@@ -649,7 +653,7 @@ duplicates data.
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Chronological log of every non-obvious design decision and why it was made |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Precise project terminology — read before using any project-specific term |
 | [`stages/`](stages/) | One locked spec per backend module (01–14), plus Pairwise Mode (22) and the bonus-challenge rules (23) |
-| [`docs/design/`](docs/design/) | Frontend screen-by-screen specs, plus Modules 15–21 (organizer shell, fixtures, demo mode, this README) |
+| [`docs/design/`](docs/design/) | Frontend screen-by-screen specs, plus Modules 15–21 (organizer shell, fixtures, demo mode, this README), 24 (release closeout), and 25 (the scoped Next.js 14→15 upgrade) |
 | [`THREAT-MODEL.md`](THREAT-MODEL.md) | Bonus: what attacks this platform stops, and the honest limits of that coverage |
 | [`NORMALIZATION.md`](NORMALIZATION.md) | Bonus: an independent re-derivation of the normalization math, run against real fixture data |
 | [`API.md`](API.md) | Bonus: the API-first contract, and current status of the OpenAPI/drift-testing layer |
