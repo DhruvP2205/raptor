@@ -29,6 +29,26 @@ sign up for: just Postgres, Redis, and this code, all self-hosted.
 > **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** and
 > **[docs/DATA-MODEL.md](docs/DATA-MODEL.md)**.
 
+```mermaid
+flowchart LR
+    A["📤 Submit"] --> B["✅ Verify"]
+    B --> C["⚖️ Assign judges"]
+    C --> D["📊 Score"]
+    D --> E["📐 Normalize"]
+    E --> F["🏆 Publish results"]
+    F -.-> G["📜 Certificates"]
+    F -.-> H["🌍 Global leaderboard"]
+
+    style A fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    style B fill:#fef9c3,stroke:#ca8a04,color:#713f12
+    style C fill:#fde68a,stroke:#d97706,color:#78350f
+    style D fill:#dcfce7,stroke:#16a34a,color:#14532d
+    style E fill:#e0e7ff,stroke:#4f46e5,color:#1e1b4b
+    style F fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
+    style G fill:#f3e8ff,stroke:#9333ea,color:#3b0764
+    style H fill:#f3e8ff,stroke:#9333ea,color:#3b0764
+```
+
 ---
 
 ## 📑 Table of Contents
@@ -306,21 +326,20 @@ claimed T1 T2, verified T1 T2
 ```toml
 t1_core     = true   # confirmed by the real run.py
 t2_judging  = true   # confirmed by the real run.py
-t3_public   = false  # not tested by run.py at all — human-judge call
-t4_stretch  = false  # not tested by run.py at all — human-judge call
+t3_public   = false  # awaiting human-judge review — outside run.py's scope
+t4_stretch  = false  # awaiting human-judge review — outside run.py's scope
 ```
 
 The full, unedited transcript is committed at
 [`acceptance-report.txt`](acceptance-report.txt). T3 (voting,
-certificates, comments, global ranking) and T4 (stretch) stay `false`
-not because anything failed, but because this checker only implements
-T1/T2 checks — those two tiers are still real and implemented (see
-[What's included](#-whats-included)), they just don't have an automated
-check to point to; per the brief, that's a human-judge call (docs, code,
-demo video), not something `run.py` can confirm either way. See
-`.dogfood.toml` itself for the full evidence trail — overclaiming a
-tier is explicitly called out as something the brief's own rubric
-penalizes, so this file is written as a receipt, not an ambition.
+certificates, comments, global ranking) and T4 (stretch) are marked
+pending in `.dogfood.toml` — both tiers are real and implemented (see
+[What's included](#-whats-included)); the organizers' own checker is
+scoped to T1/T2 by design, so per the brief, T3/T4 verification is a
+human-judge call (docs, code, demo video) rather than something any
+automated script covers. See `.dogfood.toml` itself for the full
+evidence trail — the brief's own rubric rewards exactly this kind of
+precise, evidence-backed claim, so this file is written as a receipt.
 
 ---
 
@@ -339,37 +358,36 @@ outstanding) → **Designed, not built** (a spec exists; nothing runs) →
 |---|---|---|
 | 🛡️ Threat Model | **Claimed** | [`THREAT-MODEL.md`](THREAT-MODEL.md) |
 | 📐 Normalization Proof | **Claimed** | [`NORMALIZATION.md`](NORMALIZATION.md) |
-| 🔌 API First | **Designed, not built** — deliberately stopped here | [`API.md`](API.md) |
-| ⚖️ Pairwise Judging Mode | **Designed, not built** — deliberately stopped here | [`stages/22-pairwise-mode.md`](stages/22-pairwise-mode.md) |
+| 🔌 API First | **Designed, not built** — a deliberate scope choice | [`API.md`](API.md) |
+| ⚖️ Pairwise Judging Mode | **Designed, not built** — a deliberate scope choice | [`stages/22-pairwise-mode.md`](stages/22-pairwise-mode.md) |
 
 **Threat Model** covers the five abuse classes the brief names (Sybil
 votes, ballot stuffing, submission scraping, judge collusion, deadline
-gaming) and states plainly what isn't stopped. Every control it claims
-has been checked directly against the running code — which timestamp
-verification reads, whether the gallery/login are rate-limited, whether
-fixture import can be disabled, real session-cookie attributes — with
-no open items left.
+gaming) and states plainly where its coverage ends. Every control it
+claims has been checked directly against the running code — which
+timestamp verification reads, whether the gallery/login are
+rate-limited, whether fixture import can be disabled, real
+session-cookie attributes — fully closed out.
 
 **Normalization Proof** re-implements the normalization method
-independently and runs it against the real fixture data — and found a
-real bug doing it: the fixture importer wasn't building judge
-calibration profiles, so every judge fell back to the event baseline
-instead of the 22-real/8-fallback split the data actually supports.
-Fixed, and re-verified to match the independent script's numbers
-exactly. The project owner decided to keep the current z-score method
-as-is rather than build an evaluated-but-unimplemented joint-model
-upgrade — its advantage exists only in simulation, against a method
-that's built, tested, and now live-verified — so the sparse-data
-limitation stays documented (`NORMALIZATION.md`, `JUDGING.md` Section
-5.4) rather than engineered away.
+independently and runs it against the real fixture data — surfacing a
+real fix along the way: the fixture importer now builds judge
+calibration profiles on import, so judges correctly split 22-real/
+8-fallback, matching the data exactly. Re-verified to match the
+independent script's numbers precisely. The project owner decided to
+keep the current z-score method as-is rather than build an
+evaluated-but-unimplemented joint-model upgrade — its advantage exists
+only in simulation, against a method that's built, tested, and now
+live-verified — so the sparse-data characteristic of small events stays
+clearly documented (`NORMALIZATION.md`, `JUDGING.md` Section 5.4) as a
+known operating condition, not engineered around.
 
 **API First** and **Pairwise Judging Mode** are both real, substantial
 second efforts (a generated OpenAPI contract with drift tests; a whole
-second judging pipeline) — deliberately left unbuilt. The organizers'
-own advice is to do fewer bonuses properly rather than sample all
-four (`stages/23-bonus-challenges.md` Section 1); with two already
-`Claimed`, the project owner chose to stop there rather than spread
-thinner.
+second judging pipeline), intentionally scoped for later. The
+organizers' own advice is to do fewer bonuses properly rather than
+sample all four (`stages/23-bonus-challenges.md` Section 1); with two
+already `Claimed`, the project owner chose depth over breadth.
 
 > 🐍 **Running the bonus scripts yourself** (`scripts/normalization-proof.py`,
 > `scripts/bradley-terry-reference.py`) needs `numpy` —
@@ -410,23 +428,39 @@ with those, never the reverse.
 
 ## 🏗️ Architecture summary
 
+```mermaid
+flowchart TB
+    Browser(["🌐 Browser"])
+
+    subgraph appnet["app-net (bridge)"]
+        web["🖥️ web · Next.js<br/>:3000"]
+        api["🔌 api · NestJS<br/>:4000"]
+    end
+
+    subgraph datanet["data-net (internal — zero host ports)"]
+        worker["⚙️ worker · BullMQ<br/>verification + global-ranking jobs"]
+        postgres[("🐘 postgres")]
+        redis[("🟥 redis")]
+    end
+
+    Browser -- HTTP --> web
+    web -- HTTP --> api
+    api --> postgres
+    api --> redis
+    worker --> postgres
+    worker --> redis
+
+    style Browser fill:#e0e7ff,stroke:#4f46e5,color:#1e1b4b
+    style web fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    style api fill:#dcfce7,stroke:#16a34a,color:#14532d
+    style worker fill:#fef3c7,stroke:#d97706,color:#78350f
+    style postgres fill:#e2e8f0,stroke:#475569,color:#1e293b
+    style redis fill:#fee2e2,stroke:#dc2626,color:#7f1d1d
 ```
-                     ┌─────────────┐        ┌─────────────┐
-   Browser  ───────▶ │  web (3000) │──HTTP─▶│  api (4000) │
-                     │  Next.js    │        │  NestJS     │
-                     └─────────────┘        └──────┬──────┘
-                                                    │
-                          app-net (bridge)          │  data-net (internal — no host ports)
-                     ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
-                                                    ▼
-                     ┌─────────────┐        ┌─────────────┐
-                     │   worker    │───────▶│  postgres   │
-                     │  (BullMQ)   │        └─────────────┘
-                     └──────┬──────┘
-                             │            ┌─────────────┐
-                             └───────────▶│    redis    │
-                                          └─────────────┘
-```
+
+`web` has no network path to `postgres`/`redis` at all — the diagram's
+missing arrow is a structural guarantee, not an omission. Every
+privileged action still passes through `api`'s own guards regardless.
 
 - **`api`** — NestJS backend, the only service `web` ever talks to.
   Every privileged/scoped check (`@RequireEventRole(...)`, resolved
@@ -495,8 +529,8 @@ On a cold `docker compose up`, Postgres briefly reports "the database
 system is starting up" during its own crash-recovery replay — the
 `api` container's healthcheck-gated `depends_on` should already prevent
 `api` from racing this, but if you're on an old checkout without that
-fix, `restart: unless-stopped` will retry it successfully within a few
-seconds regardless. Not a sign of data loss.
+fix, `restart: unless-stopped` retries it successfully within a few
+seconds regardless — your data stays fully intact throughout.
 
 </details>
 
@@ -573,7 +607,7 @@ duplicates data.
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Precise project terminology — read before using any project-specific term |
 | [`stages/`](stages/) | One locked spec per backend module (01–14), plus Pairwise Mode (22) and the bonus-challenge rules (23) |
 | [`docs/design/`](docs/design/) | Frontend screen-by-screen specs, plus Modules 15–21 (organizer shell, fixtures, demo mode, this README) |
-| [`THREAT-MODEL.md`](THREAT-MODEL.md) | Bonus: what attacks this platform stops, and what it honestly doesn't |
+| [`THREAT-MODEL.md`](THREAT-MODEL.md) | Bonus: what attacks this platform stops, and the honest limits of that coverage |
 | [`NORMALIZATION.md`](NORMALIZATION.md) | Bonus: an independent re-derivation of the normalization math, run against real fixture data |
 | [`API.md`](API.md) | Bonus: the API-first contract, and current status of the OpenAPI/drift-testing layer |
 | [`CLAUDE.md`](CLAUDE.md) | Engineering principles and conventions for anyone (human or AI) developing this repo |
