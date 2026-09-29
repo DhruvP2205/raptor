@@ -2,6 +2,8 @@ import type { PrismaClient } from '@prisma/client';
 import { generateRawToken } from '../common/crypto.util';
 import { normalizeEmail } from '../common/email.util';
 import { slugify } from '../common/slugify.util';
+import { computeMeanStdDev } from '../common/stats.util';
+import { computeJudgeRawTotal } from '../scoring/score-formula';
 
 // D167/D171, docs/design/16-fixtures-import.md — the acceptance
 // checker's fixtures importer. Direct-write only: deliberately bypasses
@@ -539,6 +541,43 @@ export async function importFixtures(
         sampleSubmissionIdForAudit = submissionId;
       }
     }
+  }
+
+  // Recompute each imported judge's calibration profile (docs/design/
+  // bonus-challenges/bonus/NORMALIZATION.md Section 7 — confirmed live,
+  // not hypothetical: a normalization run against fixture-imported data
+  // put 100% of judges on the event-baseline fallback, zero on their own
+  // profile, because this importer writes JudgeAssignment/Score rows
+  // directly and never triggered the calibration-update side effect a
+  // real submit-review call carries (stages/09-normalization.md Section
+  // 3: "Recomputed after every submit-review call"). Reuses the exact
+  // same pure functions CalibrationService.recompute() uses — not a
+  // second implementation of the formula — so this can never drift from
+  // what a real submit-review call would have produced.
+  const importedJudgeIds = new Set(
+    fixtures.judges.map((j) => judgeInternalIdByFixtureId.get(j.id)).filter((id): id is string => Boolean(id)),
+  );
+  for (const judgeId of importedJudgeIds) {
+    const completedAssignments = await prisma.judgeAssignment.findMany({
+      where: { judgeId, status: 'COMPLETED' },
+      include: { scores: { include: { criterion: true } } },
+    });
+    const rawTotals = completedAssignments.map(
+      (assignment) => computeJudgeRawTotal(assignment.scores.map((s) => ({
+        kind: s.criterion.kind,
+        weightPercent: s.criterion.weightPercent,
+        value: s.value,
+      }))).rawTotal,
+    );
+    const { mean, stdDev } = computeMeanStdDev(rawTotals);
+    await prisma.user.update({
+      where: { id: judgeId },
+      data: {
+        judgeCalibrationMean: mean,
+        judgeCalibrationStdDev: stdDev,
+        judgeCalibrationSampleCount: rawTotals.length,
+      },
+    });
   }
 
   return {

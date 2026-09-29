@@ -32,19 +32,19 @@ base_url = "http://localhost:4000"
 # All five are concrete, working paths against the real fixtures.json
 # import — not templates. Re-generate before a real checker run if the DB
 # has since changed (see [regenerate] at the bottom of this file).
-gallery      = "/events/39bc0dac-0499-4969-b539-81d3bff3a755/submissions"
-submit       = "/submissions/3abf0b81-016a-4986-b6b1-116cf808e36b/submit"
+gallery      = "/events/81dd9c8a-494b-4ad2-a861-58742d4e8f9b/submissions"
+submit       = "/submissions/cecd5b02-83f0-4e31-84b4-60bad3ad5e86/submit"
 # Module 19 (docs/design/19-dogfood-toml.md) — moved off the old
 # assignment-id-keyed /assignments/:id route onto the dedicated
 # (submissionId, judgeId) audit route built for this
 # (scoring/audit-scoring.controller.ts), which also gives an organizer
 # real audit access to a specific judge's review — a capability the old
 # route never had.
-judge_scores = "/submissions/6730dbd7-8eeb-4b05-a78f-fbdf11acc35e/judges/fea18e3b-035c-4beb-bde2-f43916bf68fc/scores"
+judge_scores = "/submissions/d311881a-d270-439d-aa55-8152c060fe1f/judges/f7f129c5-abc8-464d-ac5e-4f0679f5928d/scores"
 # Same URL as judge_scores by design (D170) — the check is which judge's
 # auth header is attached, not a different route.
-peer_scores  = "/submissions/6730dbd7-8eeb-4b05-a78f-fbdf11acc35e/judges/fea18e3b-035c-4beb-bde2-f43916bf68fc/scores"
-csv_export   = "/events/39bc0dac-0499-4969-b539-81d3bff3a755/export/submissions.csv"
+peer_scores  = "/submissions/d311881a-d270-439d-aa55-8152c060fe1f/judges/f7f129c5-abc8-464d-ac5e-4f0679f5928d/scores"
+csv_export   = "/events/81dd9c8a-494b-4ad2-a861-58742d4e8f9b/export/submissions.csv"
 
 [auth]
 # Seed-time bootstrap (D169, hardened D175/Module 17) — the checker never
@@ -56,10 +56,10 @@ csv_export   = "/events/39bc0dac-0499-4969-b539-81d3bff3a755/export/submissions.
 # placeholders) because a real run.py execution needs them to actually
 # connect — these are fixture/seed-only session rows tied to a
 # throwaway local dev database, not production credentials.
-organizer   = "Cookie: raptor_session=c6755c39aa56fb7ecee8646b1421acd6340be559bb6cf6cc8cbcde595749f673"
-judge_a     = "Cookie: raptor_session=d6fafeff8ab2e01db6e79223a9a0f0ae5cc0a623add038abd08abbbcae724ccc"
-judge_b     = "Cookie: raptor_session=35da4da6b70a51060134ece961f4efeb9f1b8efb4a514c5ea19527f1cf56e883"
-participant = "Cookie: raptor_session=beef2355e976e2ee0d2e938f7573e9264581e1a4bcd4f5767db2f2352a801fb4"
+organizer   = "Cookie: raptor_session=3206a2881a7c9ff54613a63fb344b19954dad1bde8762c5d9892c41dab99ea8b"
+judge_a     = "Cookie: raptor_session=4aa3f9e4b2c90d967dae2b44d0451e3b71e463cf7a18bb15bf55d07970b7d90e"
+judge_b     = "Cookie: raptor_session=aca8030becf1d36e2de1c31d87a40411b2b6e4c01a129e59551f881b4a75eb64"
+participant = "Cookie: raptor_session=9a3b85c4f49151d483a8c9fdf75a2ead2eaf448b8221bbb4ec936f591de6c25b"
 
 [tiers]
 # `claimed` is the only key run.py itself reads — a list of "T1"/"T2"/

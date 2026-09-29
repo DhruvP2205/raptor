@@ -41,12 +41,13 @@ sign up for: just Postgres, Redis, and this code, all self-hosted.
 6. [Running the acceptance checker](#-running-the-acceptance-checker)
 7. [Running the test suite](#-running-the-test-suite)
 8. [Tiers claimed](#-tiers-claimed)
-9. [What's included](#-whats-included)
-10. [Architecture summary](#-architecture-summary)
-11. [Project structure](#-project-structure)
-12. [Troubleshooting](#-troubleshooting)
-13. [Documentation map](#-documentation-map)
-14. [License](#-license)
+9. [Bonus challenges](#-bonus-challenges)
+10. [What's included](#-whats-included)
+11. [Architecture summary](#-architecture-summary)
+12. [Project structure](#-project-structure)
+13. [Troubleshooting](#-troubleshooting)
+14. [Documentation map](#-documentation-map)
+15. [License](#-license)
 
 ---
 
@@ -323,6 +324,61 @@ penalizes, so this file is written as a receipt, not an ambition.
 
 ---
 
+## 🎁 Bonus challenges
+
+Optional, worth nothing to the score directly (`stages/23-bonus-challenges.md`
+Section 1) — they only break ties and feed a separate prize. Same
+honesty bar as tiers: a status is never rounded up. Four-value
+vocabulary (`stages/23-bonus-challenges.md` Section 2): **Claimed**
+(fully done and verified) → **Documented, unverified** (doc exists,
+something in it hasn't been checked, or one "done when" item is still
+outstanding) → **Designed, not built** (a spec exists; nothing runs) →
+**Not attempted**.
+
+| Bonus | Status | Where |
+|---|---|---|
+| 🛡️ Threat Model | **Claimed** | [`THREAT-MODEL.md`](THREAT-MODEL.md) |
+| 📐 Normalization Proof | **Claimed** | [`NORMALIZATION.md`](NORMALIZATION.md) |
+| 🔌 API First | **Designed, not built** — deliberately stopped here | [`API.md`](API.md) |
+| ⚖️ Pairwise Judging Mode | **Designed, not built** — deliberately stopped here | [`stages/22-pairwise-mode.md`](stages/22-pairwise-mode.md) |
+
+**Threat Model** covers the five abuse classes the brief names (Sybil
+votes, ballot stuffing, submission scraping, judge collusion, deadline
+gaming) and states plainly what isn't stopped. Every control it claims
+has been checked directly against the running code — which timestamp
+verification reads, whether the gallery/login are rate-limited, whether
+fixture import can be disabled, real session-cookie attributes — with
+no open items left.
+
+**Normalization Proof** re-implements the normalization method
+independently and runs it against the real fixture data — and found a
+real bug doing it: the fixture importer wasn't building judge
+calibration profiles, so every judge fell back to the event baseline
+instead of the 22-real/8-fallback split the data actually supports.
+Fixed, and re-verified to match the independent script's numbers
+exactly. The project owner decided to keep the current z-score method
+as-is rather than build an evaluated-but-unimplemented joint-model
+upgrade — its advantage exists only in simulation, against a method
+that's built, tested, and now live-verified — so the sparse-data
+limitation stays documented (`NORMALIZATION.md`, `JUDGING.md` Section
+5.4) rather than engineered away.
+
+**API First** and **Pairwise Judging Mode** are both real, substantial
+second efforts (a generated OpenAPI contract with drift tests; a whole
+second judging pipeline) — deliberately left unbuilt. The organizers'
+own advice is to do fewer bonuses properly rather than sample all
+four (`stages/23-bonus-challenges.md` Section 1); with two already
+`Claimed`, the project owner chose to stop there rather than spread
+thinner.
+
+> 🐍 **Running the bonus scripts yourself** (`scripts/normalization-proof.py`,
+> `scripts/bradley-terry-reference.py`) needs `numpy` —
+> `pip install -r scripts/requirements.txt` first. This is separate
+> from the acceptance checker (`run.py`), which needs only the Python
+> standard library and nothing else.
+
+---
+
 ## 🧩 What's included
 
 Everything below is **implemented and tested** — backend routes with
@@ -515,8 +571,11 @@ duplicates data.
 | [`docs/DATA-MODEL.md`](docs/DATA-MODEL.md) | Full Prisma schema, field-by-field, with the reasoning behind each design choice |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Chronological log of every non-obvious design decision and why it was made |
 | [`docs/GLOSSARY.md`](docs/GLOSSARY.md) | Precise project terminology — read before using any project-specific term |
-| [`stages/`](stages/) | One locked spec per backend module (01–14) — the actual source of truth for behavior |
+| [`stages/`](stages/) | One locked spec per backend module (01–14), plus Pairwise Mode (22) and the bonus-challenge rules (23) |
 | [`docs/design/`](docs/design/) | Frontend screen-by-screen specs, plus Modules 15–21 (organizer shell, fixtures, demo mode, this README) |
+| [`THREAT-MODEL.md`](THREAT-MODEL.md) | Bonus: what attacks this platform stops, and what it honestly doesn't |
+| [`NORMALIZATION.md`](NORMALIZATION.md) | Bonus: an independent re-derivation of the normalization math, run against real fixture data |
+| [`API.md`](API.md) | Bonus: the API-first contract, and current status of the OpenAPI/drift-testing layer |
 | [`CLAUDE.md`](CLAUDE.md) | Engineering principles and conventions for anyone (human or AI) developing this repo |
 
 ---

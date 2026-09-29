@@ -233,6 +233,21 @@ Both raw and normalized numbers stay visible side by side to
 organizers/admins after a run — normalization is never a black box that
 discards the input it worked from.
 
+### 5.4 A limit worth stating plainly
+
+**On the organizers' own fixture data, per-judge z-scoring is not
+clearly better than plain raw averaging — and may be worse.** Each
+judge sees only a handful of projects (median 3), so a judge's mean
+reflects which projects they happened to see almost as much as how
+generous they are; a standard deviation estimated from three reviews
+is unstable. The method's real payoff shows up once judges genuinely
+differ a lot in leniency — under light bias, plain averaging can win.
+See `NORMALIZATION.md` (repository root) for the full derivation,
+the worked numbers behind this claim, and why the safeguards in
+Section 5 above (raw always shown alongside normalized, manual
+trigger, re-runnable before the lock) keep this limit from becoming a
+silent problem rather than a visible, correctable one.
+
 ---
 
 ## 6. Ranking

@@ -1,0 +1,75 @@
+== 1. FIXTURE DESIGN (after import rules) ==
+projects scored: 40   judges: 30   reviews: 123
+criteria weights (even split, remainder to last key): {'functionality': 33, 'quality': 33, 'innovation': 34}
+reviews per project  min/median/max: 2/3.0/6
+reviews per judge    min/median/max: 1/3.0/11
+judges using their own profile (>=3 reviews): 22   using event baseline: 8
+leniency spread across judges (sd of judge means, raw scale): 0.315   range 2.99..4.22
+after normalization every own-profile judge has mean z = 0 by construction
+
+== 2. RAW vs NORMALIZED (dense rank; ties share) ==
+project title                    raw    norm  rawRk  normRk  move
+prj_34  Iron Switch             4.33    1.14      2       1    +1
+prj_33  Slow Trail              3.99    1.03      6       2    +4
+prj_11  Salt Ledger             4.33    0.79      1       3    -2
+prj_37  Salt Loom               4.08    0.73      5       4    +1
+prj_25  Dry Relay               4.11    0.55      4       5    -1
+prj_16  Salt Kiln               3.99    0.54      6       6    +0
+prj_10  Still Beacon            4.16    0.53      3       7    -4
+prj_31  Salt Ferry              3.55    0.27     16       8    +8
+prj_39  Paper Anchor            3.52    0.24     18       9    +9
+prj_24  Glass Beacon            3.50    0.22     19      10    +9
+prj_21  Copper Kiln             3.89    0.21      7      11    -4
+prj_04  Green Switch            3.77    0.16     10      12    -2
+prj_15  Copper Orbit            3.67    0.11     13      13    +0
+prj_12  Open Beacon             3.45    0.09     22      14    +8
+prj_08  North Drift             3.81    0.08      8      15    -7
+prj_36  Salt Drift              3.67    0.07     12      16    -4
+prj_02  Small Meadow            3.54    0.07     17      17    +0
+prj_27  Flat Thread             3.45    0.06     21      18    +3
+prj_38  Deep Beacon             3.78    0.01      9      19   -10
+prj_01  Glass Signal            3.44   -0.04     24      20    +4
+prj_18  Open Kiln               3.50   -0.05     19      21    -2
+prj_14  Green Lantern           3.40   -0.05     25      22    +3
+prj_35  Warm Beacon             3.47   -0.06     20      23    -3
+prj_09  Hollow Signal           3.56   -0.07     14      24   -10
+prj_29  Flat Relay              3.34   -0.07     26      25    +1
+prj_19  Small Relay             3.67   -0.21     11      26   -15
+prj_03  Deep Compass            3.33   -0.27     28      27    +1
+prj_17  Small Loom              3.55   -0.28     16      28   -12
+prj_32  Loud Ledger             3.44   -0.29     23      29    -6
+prj_41  Dry Harbour             3.55   -0.36     15      30   -15
+prj_30  Paper Harbour           3.11   -0.36     33      31    +2
+prj_13  Quiet Anchor            3.33   -0.38     27      32    -5
+prj_26  Amber Hours             3.22   -0.43     29      33    -4
+prj_20  Paper Thread            3.22   -0.64     30      34    -4
+prj_22  Dry Bridge              3.11   -0.67     32      35    -3
+prj_06  Dry Compass             3.12   -0.72     31      36    -5
+prj_28  Flat Meadow             3.45   -0.78     22      37   -15
+prj_40  Slow Loom               3.00   -0.94     34      38    -4
+prj_23  Slow Quarry             2.89   -1.04     36      39    -3
+prj_05  North Compass           2.89   -1.26     35      40    -5
+
+projects whose rank changed: 37/40   max move: 15   Spearman(raw, normalized): 0.847
+top-5 by raw:        ['prj_11', 'prj_34', 'prj_10', 'prj_25', 'prj_37']
+top-5 by normalized: ['prj_34', 'prj_33', 'prj_11', 'prj_37', 'prj_25']
+
+== 3. EDGE CASES THE FIXTURE PLANTS ==
+zero-variance judges (z=0, flagged for organizer): ['jdg_07']
+judges below minimum-N (event baseline used): ['jdg_01', 'jdg_03', 'jdg_05', 'jdg_12', 'jdg_17', 'jdg_23', 'jdg_27', 'jdg_28']
+resubmission: team with two entries collapsed to one submission; judges who scored both keep the later score
+
+== 4. SIMULATION WITH KNOWN TRUTH (2000 runs, fixture's real judge/project incidence) ==
+score = judge_bias + judge_scale * true_quality + noise ;  Spearman vs true quality
+scenario     leniency R  raw mean  platform z  additive*   platform>=raw
+tau=0.0           0.471     0.905       0.829      0.893   2%
+tau=0.25          0.503     0.895       0.826      0.889   5%
+tau=0.5           0.575     0.873       0.823      0.882   14%
+tau=0.75          0.652     0.839       0.821      0.869   38%
+tau=1.0           0.725     0.801       0.818      0.855   58%
+tau=1.5           0.825     0.716       0.811      0.813   83%
+* additive = project+judge effects with ridge on judges; evaluated only, NOT implemented in the platform
+
+== 5. WHERE THE REAL FIXTURE SITS ==
+leniency R = sd(judge means, judges with >=3 reviews) / sd(all review scores). Higher = judges differ more.
+fixture R = 0.491   (compare with the R column above: the row with the closest R is the regime this data resembles)

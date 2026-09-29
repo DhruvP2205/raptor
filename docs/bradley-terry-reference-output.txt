@@ -1,0 +1,9 @@
+40 projects, balanced random pairs, judge choice follows the BT model; 500 runs each
+ comparisons/project  total pairs  Spearman vs truth  MM iterations
+                   3           59              0.556          122.0
+                   5           99              0.653          163.1
+                   8          159              0.742          196.3
+                  12          239              0.804          211.1
+                  20          399              0.872          210.8
+
+sanity (0 beats 1 twice, 2 beats 3 once, two disconnected pairs): [2.13  0.469 1.696 0.59 ] all finite: True

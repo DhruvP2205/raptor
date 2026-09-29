@@ -2325,3 +2325,228 @@ script; a structural guess that would crash on first contact is exactly
 the kind of overclaim-by-omission this project's own honesty rule
 exists to catch, once the real artifact was actually available to check
 against.
+
+---
+
+## Four new bonus-challenge documents — verified live, one real bug found and fixed
+
+**D182 — `stages/22-pairwise-mode.md`, `NORMALIZATION.md`,
+`THREAT-MODEL.md`, and `API.md` (initially landed at
+`docs/design/bonus-challenges/bonus/` — an as-delivered packaging
+bundle, treated like `fixtures.json`/`run.py` while it was being read,
+not edited in place) were added this session. Each had explicit open
+items — "not yet performed," "claims still to confirm," "things to
+confirm" — that this entry closes out with real findings, not
+inference.**
+
+**Pairwise Mode (`22-pairwise-mode.md`):** explicitly "design only, not
+implemented, not claimed" per its own header — left untouched, on
+purpose. Nothing to verify; nothing to build.
+
+**Threat Model — all five items in its former Section 7 checked
+directly against the running code, each confirmed, folded into
+Sections 3.5/4/5, and Section 7 itself deleted per its own instruction
+("remove this section once each item is checked"):**
+1. Verification reads the commit **author date**
+   (`apps/worker/src/verification/github-client.ts`), not committer
+   date or GitHub push time — the most spoofable of the three, exactly
+   the risk 5.5 already named.
+2. The gallery (`submissions.controller.ts`) carries **no rate-limit
+   guard** — confirmed by reading every guard in the codebase; only
+   uploads, team-join, comments, and voting have one.
+3. Login (`auth.controller.ts`) carries **no rate-limit guard** either.
+4. Fixture import has **no kill switch** — `seed.ts` imports
+   unconditionally whenever a fixtures file exists at the default path
+   or `FIXTURES_PATH`; no env flag disables it.
+5. Session cookies: `httpOnly: true`, `secure` true in production,
+   **`sameSite: 'lax'`** (`session.service.ts`) — real CSRF protection,
+   confirmed rather than assumed.
+
+**API.md:** confirmed, by grepping the entire `apps/api` tree, that
+**no OpenAPI/Swagger tooling exists anywhere** — zero `@nestjs/swagger`
+usage, no generated `openapi.json`, none of the three drift checks
+wired in. The doc's own hedge ("API-first by architecture, specification
+pending verification") was accurate; Section 5 rewritten from "confirm"
+to "confirmed" — this is a real, unbuilt gap, not a misunderstanding.
+Also confirmed: README/`.dogfood.toml`/this file all agree on
+`http://localhost:4000`, and the session cookie is named
+`raptor_session` with the attributes above.
+
+**Normalization Proof (`NORMALIZATION.md`) — the substantial one, a
+real bug found and fixed, not just documented:**
+
+Section 7 said "not yet performed" and named three possible outcomes
+of running normalization on the real fixture-imported event and
+comparing against `scripts/normalization-proof.py`. Performed live:
+booted the api against the real fixture database, triggered
+`POST /events/:id/normalization-runs`, exported
+`GET .../export/normalization-comparison.csv`. Two real obstacles hit
+before a run could even happen — both left as permanent, working
+platform behavior, not bypassed:
+
+1. The already-imported fixture event's `resultsAnnounceAt` had long
+   passed → `NORMALIZATION_LOCKED` (D126's lock, working exactly as
+   designed).
+2. Tried extending `resultsAnnounceAt` forward via `PATCH` to reopen
+   the window → `TIMELINE_FIELD_IMMUTABLE` (D16's "a passed-phase
+   timestamp can't be edited," also working as designed).
+
+With the user's explicit authorization, reset the local fixture
+database (`prisma migrate reset`, throwaway dev data only) and
+re-seeded, giving a fresh, open normalization window. Manipulated
+`judgingClosesAt` directly in the database into the recent past
+(same technique this project's own test suite already uses — CLAUDE.md:
+"tested by manipulating fixture timestamps... never by waiting real
+time") rather than waiting 24 hours for the fixture's own relative
+window to open naturally.
+
+**First real run produced outcome 2 exactly as the document predicted**:
+`NormalizedJudgeScore.usedFallback: true` for **123 of 123** judge-scores
+— every judge on the event baseline, zero using a personal profile, not
+just the 8 genuinely below minimum-N. Root cause, confirmed by reading
+`fixtures-import.ts`: it writes `JudgeAssignment`/`Score`/`JudgeReview`
+rows directly and never triggers the calibration-update side effect a
+real `submit-review` call carries (`stages/09-normalization.md` Section
+3). **Fixed** — `importFixtures()` now recomputes every imported
+judge's calibration profile after import, reusing
+`computeMeanStdDev`/`computeJudgeRawTotal` (the exact same pure
+functions `CalibrationService.recompute()` uses — not a second
+implementation of the formula that could drift from the real one).
+
+**Re-verified after the fix**: **22 judges on their own profile, 8 on
+the event baseline — an exact match** to `normalization-proof.py`'s
+own independently-computed numbers. Re-ran the normalization export:
+real rank movement appeared, and the corrected top-5
+(Iron Switch, Slow Trail, Salt Ledger, Salt Loom, Salt Kiln) matches 4
+of the reference script's own top-5 in identical order; the one
+swap (Salt Kiln/Dry Relay) is fully accounted for by a confirmed,
+intentional convention difference — the platform's
+`computeMeanStdDev` uses population stddev (divide by N), the
+reference script uses sample stddev (divide by N−1) — exactly the
+"small differences" caveat Section 7 already anticipated, not a new
+problem. 470/470 tests still pass, including `fixtures-import.spec.ts`,
+unchanged by this fix.
+
+**Housekeeping consequence of the DB reset, not a separate decision**:
+resetting the local fixture database changed every fixture-derived ID
+(`event`, `submissions`, `judges`), which made `.dogfood.toml`'s
+committed route/auth values stale. Regenerated them from the fresh
+seed and re-ran the real `run.py` (D181) against the new state — all 7
+checks still pass, `claimed T1 T2, verified T1 T2`, `acceptance-report.txt`
+updated to the new transcript. No change to which tiers are claimed.
+
+Rejected: leaving Section 7's three hypothetical outcomes as
+hypothetical once a real run was actually possible — the whole point
+of this document (like `.dogfood.toml`) is being an honest receipt,
+not a plausible-sounding forecast; once the live check could actually
+be run, running it and fixing what it found was the only option
+consistent with every other "verify live, don't assume" pattern already
+established this session (D178–D181).
+
+---
+
+## Module 23 (Bonus Challenges) — file layout, exact-reproduction check, statuses
+
+**D183 — `stages/23-bonus-challenges.md` arrived specifying an exact
+file layout different from where D182's four documents had landed, plus
+a precise "done when" bar and a four-value status vocabulary per
+bonus. Reconciled fully:**
+
+**Files moved to the paths Section 4 specifies** — `THREAT-MODEL.md`,
+`NORMALIZATION.md`, `API.md` to the repository root (out of
+`docs/design/`); `22-pairwise-mode.md` and `23-bonus-challenges.md`
+into `stages/`; `normalization-proof.py`/`bradley-terry-reference.py`
+into a new `scripts/` directory; their reference output files into
+`docs/`; a new `scripts/requirements.txt` (`numpy`) added, since the
+scripts need it and the acceptance checker (`run.py`) deliberately
+doesn't. The `docs/design/bonus-challenges/` packaging bundle was
+deleted once everything needed was copied out — Section 4's own
+instruction ("not committed: the packaging zip and its `bonus/`
+folder"). Fixed `NORMALIZATION.md`'s placeholder fixture path
+(`path/to/fixtures.json`) to the real one.
+
+**Exact-reproduction check performed** (Normalization Proof's "done
+when" item b): re-ran `normalization-proof.py` with the default 2000
+simulations against the real fixture and diffed against the committed
+`docs/normalization-proof-output.txt` — byte-identical except for a
+CRLF-vs-LF line-ending difference from the local Windows shell.
+Confirmed reproducible, not just plausible.
+
+**`JUDGING.md` Section 5.4 added** — the required pointer to
+`NORMALIZATION.md`'s sparse-data limitation, closing that document's
+last mechanical "done when" item.
+
+**Statuses determined against Section 2's vocabulary, not assumed**:
+
+- **Threat Model: `Claimed`.** Every item in its "done when" list is
+  independently true — five abuse classes covered, every control
+  checked against real code (D182), its former Section 7 empty and
+  removed. This is the first bonus to cross the bar.
+- **Normalization Proof: `Documented, unverified` — one item left.**
+  Every mechanical item is done (cross-check performed, exact
+  reproduction confirmed, real fixture path, `JUDGING.md` pointer). The
+  one remaining item — Section 7's "adopt the joint-model upgrade, or
+  keep the current method with its limitation documented" — is
+  explicitly the project owner's call (it would change an already
+  built and tested module), not something decided here. Per Rule 1
+  ("partial evidence means Documented, unverified"), it can't be marked
+  `Claimed` until that decision is made and logged.
+- **API First: `Designed, not built`.** Confirmed in D182 — no
+  OpenAPI/Swagger tooling exists anywhere in the codebase. Real,
+  scoped work (generated `openapi.json` plus three wired-in drift
+  checks), correctly left undone rather than half-built.
+- **Pairwise Mode: `Designed, not built`**, unchanged — explicitly not
+  attempted per its own document's framing.
+
+`README.md` gained a "Bonus challenges" section (table plus the same
+status vocabulary, TOC entry, docs-map rows for the three new root
+docs, and the numpy-vs-stdlib note Section 4 requires) so a reader
+never sees a claim here that the underlying documents don't back.
+
+**Two items flagged back rather than decided — both explicitly named
+as the project owner's call in `stages/23-bonus-challenges.md` Section
+7, not mine to resolve:**
+1. Whether to adopt the evaluated-but-unimplemented joint-model
+   normalization upgrade, or keep the current z-score method with its
+   sparse-data limitation documented as-is.
+2. Whether to attempt API First or Pairwise Mode as real builds at all,
+   given the organizers' own stated advice favors doing fewer bonuses
+   properly over sampling all four.
+
+**D184 — Both of D183's flagged owner decisions resolved by the user,
+directly:**
+
+1. **Normalization method: keep the current z-score method as-is.**
+   The joint-model upgrade's simulated advantage was weighed against
+   the cost of changing an already-built, tested, and (as of D182)
+   live-verified module on the strength of a synthetic simulation with
+   assumptions the document itself never claimed as certain
+   (`NORMALIZATION.md` Section 4's own hedge: "different assumptions
+   move the numbers... but this is a model, not the organizer's data").
+   The sparse-data limitation this fixture exposes (median 3 reviews
+   per judge, unstable personal profiles) is a data-coverage problem,
+   not a formula problem — a joint model doesn't fix sparse coverage
+   either, it just degrades somewhat more gracefully against it in
+   simulation. Documented as a known, visible limitation
+   (`NORMALIZATION.md`, `JUDGING.md` Section 5.4) rather than engineered
+   around. This closes Normalization Proof's last "done when" item —
+   **status moves from `Documented, unverified` to `Claimed`**
+   (`stages/23-bonus-challenges.md` Section 3.2).
+2. **Remaining bonuses: stop at two.** API First and Pairwise Mode both
+   stay `Designed, not built` — not attempted further, by deliberate
+   choice, not by running out of time. Rationale given directly: "build
+   perfect rather than build all." Matches the organizers' own stated
+   advice (`stages/23-bonus-challenges.md` Section 1: "do the ones that
+   can be done properly and not sample all four") and this project's
+   founding concern (D1: avoid exactly the "AI slop" that comes from
+   generating breadth over depth). Pairwise Mode in particular is, by
+   its own document's admission (Section 7), "the only bonus that is a
+   second pipeline rather than a document or a report" — comparable in
+   scope to an entire new judging mode, for 5 tie-break points with no
+   direct score effect.
+
+Both `stages/23-bonus-challenges.md` (status line, Section 3.2, Section
+7) and `README.md`'s Bonus Challenges table updated to match —
+Normalization Proof now shown as `Claimed` alongside Threat Model; API
+First and Pairwise Mode explicitly labeled as a deliberate stop, not an
+open gap.
