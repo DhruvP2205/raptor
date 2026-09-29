@@ -63,7 +63,11 @@ function OutsideWindowCommitsList({ commits }: { commits: VerificationRow['outsi
   );
 }
 
-function VerificationRowExpanded({
+// Content only, no <tr>/<td> wrapper — shared between the md+ table's
+// expanded row and the mobile card's expanded section
+// (FRONTEND-MEGA-DOC.md Part 2: one implementation, never redefined
+// per layout).
+function VerificationRowExpandedContent({
   row,
   eventId,
   onUpdated,
@@ -107,50 +111,58 @@ function VerificationRowExpanded({
   }
 
   return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="text-xs text-ink-muted">
+          <p>First commit: <span className="font-mono text-ink">{formatDateTime(row.firstCommitAt)}</span></p>
+          <p className="mt-1">Last commit: <span className="font-mono text-ink">{formatDateTime(row.lastCommitAt)}</span></p>
+          <p className="mt-1">
+            Commits: <span className="font-mono text-ink">{row.totalCommits}</span> total,{' '}
+            <span className="font-mono text-ink">{row.commitsInWindow}</span> in window
+          </p>
+          {row.finalDecisionRemarks && (
+            <p className="mt-2">
+              Reason on file: <span className="text-ink">{row.finalDecisionRemarks}</span>
+            </p>
+          )}
+        </div>
+        <OutsideWindowCommitsList commits={row.outsideWindowCommits} />
+      </div>
+
+      <ApiErrorAlert error={error} />
+      <div className="mt-4 flex gap-2">
+        <Button size="sm" loading={busy} onClick={handleApprove} disabled={row.finalDecision === 'APPROVED'}>
+          Approve
+        </Button>
+        <Button
+          size="sm"
+          variant="danger"
+          onClick={() => setConfirmDisqualify(true)}
+          disabled={row.finalDecision === 'DISQUALIFIED'}
+        >
+          Disqualify
+        </Button>
+      </div>
+
+      <ConfirmDialog
+        open={confirmDisqualify}
+        title="Disqualify this submission?"
+        description="This removes the submission from judging and results. This can be undone by an admin, but won't happen automatically."
+        confirmLabel="Disqualify submission"
+        requireReason
+        loading={busy}
+        onConfirm={handleDisqualify}
+        onCancel={() => setConfirmDisqualify(false)}
+      />
+    </>
+  );
+}
+
+function VerificationRowExpanded(props: { row: VerificationRow; eventId: string; onUpdated: (r: VerificationRow) => void }) {
+  return (
     <tr>
       <td colSpan={5} className="border-b border-line bg-paper-raised px-4 py-4">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="text-xs text-ink-muted">
-            <p>First commit: <span className="font-mono text-ink">{formatDateTime(row.firstCommitAt)}</span></p>
-            <p className="mt-1">Last commit: <span className="font-mono text-ink">{formatDateTime(row.lastCommitAt)}</span></p>
-            <p className="mt-1">
-              Commits: <span className="font-mono text-ink">{row.totalCommits}</span> total,{' '}
-              <span className="font-mono text-ink">{row.commitsInWindow}</span> in window
-            </p>
-            {row.finalDecisionRemarks && (
-              <p className="mt-2">
-                Reason on file: <span className="text-ink">{row.finalDecisionRemarks}</span>
-              </p>
-            )}
-          </div>
-          <OutsideWindowCommitsList commits={row.outsideWindowCommits} />
-        </div>
-
-        <ApiErrorAlert error={error} />
-        <div className="mt-4 flex gap-2">
-          <Button size="sm" loading={busy} onClick={handleApprove} disabled={row.finalDecision === 'APPROVED'}>
-            Approve
-          </Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => setConfirmDisqualify(true)}
-            disabled={row.finalDecision === 'DISQUALIFIED'}
-          >
-            Disqualify
-          </Button>
-        </div>
-
-        <ConfirmDialog
-          open={confirmDisqualify}
-          title="Disqualify this submission?"
-          description="This removes the submission from judging and results. This can be undone by an admin, but won't happen automatically."
-          confirmLabel="Disqualify submission"
-          requireReason
-          loading={busy}
-          onConfirm={handleDisqualify}
-          onCancel={() => setConfirmDisqualify(false)}
-        />
+        <VerificationRowExpandedContent {...props} />
       </td>
     </tr>
   );
@@ -365,38 +377,100 @@ export default function VerificationQueuePage() {
             <EmptyState title="No submissions to verify yet." />
           </div>
         ) : (
-          <table className="mt-2 w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-ink-faint">
-                <th className="w-8 py-2"></th>
-                <th className="py-2">Submission</th>
-                <th className="py-2">Check status</th>
-                <th className="py-2">Decision</th>
-                <th className="w-8 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <Fragment key={row.submissionId}>
-                  <tr
-                    className="cursor-pointer border-b border-line hover:bg-paper-raised"
-                    onClick={() => setExpanded((cur) => (cur === row.submissionId ? null : row.submissionId))}
-                  >
-                    <td className="py-2.5" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(row.submissionId)}
-                        onChange={() => {
-                          setSelected((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(row.submissionId)) next.delete(row.submissionId);
-                            else next.add(row.submissionId);
-                            return next;
-                          });
-                        }}
+          <>
+            {/* FRONTEND-MEGA-DOC.md Part 2 — Table→Card: table at md+,
+                stacked cards below it, never horizontal scroll as the
+                only mobile adaptation. */}
+            <table className="mt-2 hidden w-full text-sm md:table">
+              <thead>
+                <tr className="text-left text-xs text-ink-faint">
+                  <th className="w-8 py-2"></th>
+                  <th className="py-2">Submission</th>
+                  <th className="py-2">Check status</th>
+                  <th className="py-2">Decision</th>
+                  <th className="w-8 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <Fragment key={row.submissionId}>
+                    <tr
+                      className="cursor-pointer border-b border-line hover:bg-paper-raised"
+                      onClick={() => setExpanded((cur) => (cur === row.submissionId ? null : row.submissionId))}
+                    >
+                      <td className="py-2.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(row.submissionId)}
+                          onChange={() => {
+                            setSelected((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row.submissionId)) next.delete(row.submissionId);
+                              else next.add(row.submissionId);
+                              return next;
+                            });
+                          }}
+                        />
+                      </td>
+                      <td className="py-2.5">
+                        <p className="font-medium text-ink">{row.title || 'Untitled submission'}</p>
+                        <p className="text-xs text-ink-muted">{row.submitterName ?? 'Unknown'}</p>
+                        {justRerunWithManualDecision.has(row.submissionId) && !pending.has(row.submissionId) && (
+                          <p className="mt-0.5 text-xs text-ink-faint">
+                            Automated check re-run — your manual decision is unchanged.
+                          </p>
+                        )}
+                      </td>
+                      <td className="py-2.5">
+                        {pending.has(row.submissionId) ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
+                            <Spinner className="h-3.5 w-3.5" /> checking…
+                          </span>
+                        ) : (
+                          <Badge tone={CHECK_STATUS_TONE[row.checkStatus]}>{row.checkStatus}</Badge>
+                        )}
+                      </td>
+                      <td className="py-2.5">
+                        <Badge tone={FINAL_DECISION_TONE[row.finalDecision]}>{row.finalDecision}</Badge>
+                      </td>
+                      <td className="py-2.5 text-ink-faint">{expanded === row.submissionId ? '▾' : '▸'}</td>
+                    </tr>
+                    {expanded === row.submissionId && (
+                      <VerificationRowExpanded
+                        row={row}
+                        eventId={event.id}
+                        onUpdated={(updated) =>
+                          setRows((list) => (list ? list.map((r) => (r.submissionId === updated.submissionId ? updated : r)) : list))
+                        }
                       />
-                    </td>
-                    <td className="py-2.5">
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="mt-2 flex flex-col gap-3 md:hidden">
+              {rows.map((row) => (
+                <Card key={row.submissionId} className="flex flex-col gap-2">
+                  <div className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={selected.has(row.submissionId)}
+                      onChange={() => {
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(row.submissionId)) next.delete(row.submissionId);
+                          else next.add(row.submissionId);
+                          return next;
+                        });
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="flex-1 text-left"
+                      onClick={() => setExpanded((cur) => (cur === row.submissionId ? null : row.submissionId))}
+                    >
                       <p className="font-medium text-ink">{row.title || 'Untitled submission'}</p>
                       <p className="text-xs text-ink-muted">{row.submitterName ?? 'Unknown'}</p>
                       {justRerunWithManualDecision.has(row.submissionId) && !pending.has(row.submissionId) && (
@@ -404,34 +478,34 @@ export default function VerificationQueuePage() {
                           Automated check re-run — your manual decision is unchanged.
                         </p>
                       )}
-                    </td>
-                    <td className="py-2.5">
-                      {pending.has(row.submissionId) ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-                          <Spinner className="h-3.5 w-3.5" /> checking…
-                        </span>
-                      ) : (
-                        <Badge tone={CHECK_STATUS_TONE[row.checkStatus]}>{row.checkStatus}</Badge>
-                      )}
-                    </td>
-                    <td className="py-2.5">
-                      <Badge tone={FINAL_DECISION_TONE[row.finalDecision]}>{row.finalDecision}</Badge>
-                    </td>
-                    <td className="py-2.5 text-ink-faint">{expanded === row.submissionId ? '▾' : '▸'}</td>
-                  </tr>
+                    </button>
+                    <span className="text-ink-faint">{expanded === row.submissionId ? '▾' : '▸'}</span>
+                  </div>
+                  <div className="flex gap-2">
+                    {pending.has(row.submissionId) ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
+                        <Spinner className="h-3.5 w-3.5" /> checking…
+                      </span>
+                    ) : (
+                      <Badge tone={CHECK_STATUS_TONE[row.checkStatus]}>{row.checkStatus}</Badge>
+                    )}
+                    <Badge tone={FINAL_DECISION_TONE[row.finalDecision]}>{row.finalDecision}</Badge>
+                  </div>
                   {expanded === row.submissionId && (
-                    <VerificationRowExpanded
-                      row={row}
-                      eventId={event.id}
-                      onUpdated={(updated) =>
-                        setRows((list) => (list ? list.map((r) => (r.submissionId === updated.submissionId ? updated : r)) : list))
-                      }
-                    />
+                    <div className="mt-1 border-t border-line pt-3">
+                      <VerificationRowExpandedContent
+                        row={row}
+                        eventId={event.id}
+                        onUpdated={(updated) =>
+                          setRows((list) => (list ? list.map((r) => (r.submissionId === updated.submissionId ? updated : r)) : list))
+                        }
+                      />
+                    </div>
                   )}
-                </Fragment>
+                </Card>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </Card>
     </Container>

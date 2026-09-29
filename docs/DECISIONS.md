@@ -2676,3 +2676,74 @@ item's decision already covered by D184:**
 **Not done, by explicit user instruction, overriding this document
 where they conflict:** B3 (OpenAPI/API First) and C8 (MIT licence
 switch). Both flagged back before being skipped, not silently ignored.
+
+---
+
+## `docs/design/FRONTEND-MEGA-DOC.md` — audited against the real frontend, three real gaps fixed
+
+**D186 — A consolidated, all-34-pages frontend design reference
+arrived ("consolidating and superseding scattered prior work"),
+including an explicit correction dropping a navy/indigo/fuchsia
+gradient hero and banning purple/violet/indigo/fuchsia entirely. Given
+this project's own documented history of flip-flopping on exactly this
+color question (monochrome → "boring," +violet/teal/rose → this doc's
+reversal), flagged back to the user directly before touching anything,
+rather than silently picking a side. User confirmed: follow the new
+doc's color rule, and audit the rest for concrete gaps rather than a
+full rewrite.**
+
+**Audited every checkable claim in the doc against the real code —
+found it already compliant on every point except one:**
+
+- **Color palette:** already fully compliant, predating this doc.
+  `tailwind.config.ts`'s `colors` object fully replaces Tailwind's
+  defaults with only gray/blue/status colors — no violet/purple/
+  indigo/fuchsia utility class even exists to use, structurally, not
+  just by convention. Grepped the whole `apps/web` tree for every
+  literal violet/purple/indigo/fuchsia hex value: none found.
+- **Typography:** already compliant — `globals.css`'s `--font-display`/
+  `--font-body` are a plain system-font stack, zero webfont downloads,
+  one typeface for display and body alike, exactly as specified.
+- **The gradient hero the doc's own correction describes:** already
+  gone — the homepage was rebuilt around real event discovery (search/
+  filter/grid) with the hero/gradient/marketing section removed
+  entirely, predating this doc.
+- **Toast rule** ("success-only; errors always inline, never toast"):
+  checked all 21 `showToast` call sites in the codebase — every one is
+  a success message; no error path routes through toast anywhere.
+- **Destructive-action/mandatory-reason rule:** checked every
+  `ConfirmDialog` call site — disqualify, ban, round-restart, transfer,
+  corrections, comment moderation all set `requireReason`; team kick/
+  delete/leave correctly don't, matching this doc's own Part 4.3
+  ("none require a reason, per Module 4's correction") — no
+  contradiction between this doc and the established exception.
+- **Site map (34 pages):** every listed page has a real, working
+  implementation. Several sit at different (the site map's own header
+  calls them "illustrative") paths than listed — `/teams/:id` is
+  folded into the event-scoped team page, `/events` was intentionally
+  merged into `/` (D90, predates this doc) — neither is a gap, both
+  are prior, deliberate decisions this doc's prose doesn't actually
+  contradict.
+
+**One real, concrete gap found and fixed — the Table→Card responsive
+contract** ("every data table has a genuine card-based mobile layout
+below `md`... never horizontal scroll as the only adaptation"): three
+pages violated it outright (`overflow-x-auto` + `<table>` with no card
+fallback) — `leaderboard/page.tsx`, the organizer normalization
+comparison table, and the organizer verification queue. Fixed all
+three: the existing table now renders only at `md`+, a new stacked-card
+view (reusing `Card`/`Badge`/`Avatar`, the same list idiom already used
+elsewhere in this app) renders below it with identical data and
+actions. The verification queue's expanded-row content (approve/
+disqualify, with its own `ConfirmDialog`) was extracted into a
+wrapper-free `VerificationRowExpandedContent` so the exact same
+interactive component works inside both a `<td>` (desktop) and a plain
+`<div>` (mobile card) — one implementation, not two that could drift
+apart, per this doc's own Part 2 rule.
+
+**Verification:** `apps/web` typechecks clean; all three changed pages
+confirmed rendering (HTTP 200, no server-side crash) against a live
+dev server. **Honest limitation:** no browser-automation tool is
+available in this environment, so the mobile card layout's actual
+visual appearance at narrow widths was not confirmed by eye — only
+that it renders without error.

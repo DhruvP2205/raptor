@@ -89,7 +89,10 @@ export default function LeaderboardPageRoute() {
         <EmptyState title="No matches" description="Try a different search term." />
       ) : (
         <>
-          <Card className="overflow-x-auto">
+          {/* FRONTEND-MEGA-DOC.md Part 2 — Table→Card: table at md+,
+              stacked cards below it, same data, never horizontal
+              scroll as the only mobile adaptation. */}
+          <Card className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-faint">
@@ -135,6 +138,36 @@ export default function LeaderboardPageRoute() {
               </tbody>
             </table>
           </Card>
+
+          <div className="flex flex-col gap-3 md:hidden">
+            {groups.map((group) => (
+              <Card key={group[0].rank} className="flex flex-col gap-3">
+                {group.map((entry, i) => (
+                  <div key={entry.userId} className="flex items-center justify-between gap-3">
+                    <Link href={`/users/${entry.userId}`} className="flex items-center gap-2">
+                      <span className="w-8 shrink-0 font-mono text-sm text-ink-muted">
+                        {i === 0 ? (entry.isTied ? `=${entry.rank}` : entry.rank) : ''}
+                      </span>
+                      <Avatar name={entry.displayName} id={entry.userId} size="small" />
+                      <span className="text-sm text-ink">{entry.displayName}</span>
+                    </Link>
+                    <div className="text-right">
+                      <p className="font-medium text-ink">{entry.points} pts</p>
+                      <p className="text-xs text-ink-muted">
+                        {entry.firstsCount > 0 && <span className="mr-1.5">1st ×{entry.firstsCount}</span>}
+                        {entry.secondsCount > 0 && <span className="mr-1.5">2nd ×{entry.secondsCount}</span>}
+                        {entry.thirdsCount > 0 && <span>3rd ×{entry.thirdsCount}</span>}
+                        {entry.firstsCount === 0 && entry.secondsCount === 0 && entry.thirdsCount === 0 && (
+                          <span>{entry.eventsCount} events</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {group.length > 1 && <Badge tone="neutral">Tied — sharing this position.</Badge>}
+              </Card>
+            ))}
+          </div>
 
           <div className="mt-4 flex items-center justify-between text-sm">
             <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>

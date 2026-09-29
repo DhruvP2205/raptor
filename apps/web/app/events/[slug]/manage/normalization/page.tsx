@@ -27,6 +27,17 @@ function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString();
 }
 
+// Shared between the md+ table row and the mobile card — same rule,
+// one implementation (FRONTEND-MEGA-DOC.md Part 2's own "never
+// redefined per page" principle for shared display logic).
+function MovementIndicator({ row }: { row: NormalizationRunDetail['normalizedScores'][number] }) {
+  const movement = row.rawRank !== null ? row.rawRank - row.rank : null;
+  if (movement === null) return <span className="text-sm">—</span>;
+  if (movement === 0) return <span className="text-sm text-ink-faint">No change</span>;
+  if (movement > 0) return <span className="text-sm text-success">↑ {movement}</span>;
+  return <span className="text-sm text-danger">↓ {Math.abs(movement)}</span>;
+}
+
 // A judge with several assignments in the same run has identical frozen
 // calibration fields across all of them (they're a snapshot of that
 // judge's state at this one run, not per-submission) — first occurrence
@@ -194,22 +205,24 @@ export default function NormalizationPage() {
                 {detail.normalizedScores.length === 0 ? (
                   <EmptyState title="No completed reviews to normalize yet." />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-faint">
-                          <th className="py-2 pr-3">Submission</th>
-                          <th className="py-2 pr-3">Raw avg</th>
-                          <th className="py-2 pr-3">Raw rank</th>
-                          <th className="py-2 pr-3">Normalized score</th>
-                          <th className="py-2 pr-3">Normalized rank</th>
-                          <th className="py-2 pr-3">Movement</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.normalizedScores.map((row) => {
-                          const movement = row.rawRank !== null ? row.rawRank - row.rank : null;
-                          return (
+                  <>
+                    {/* FRONTEND-MEGA-DOC.md Part 2 — Table→Card: table
+                        at md+, stacked cards below it, never
+                        horizontal scroll as the only mobile adaptation. */}
+                    <div className="hidden overflow-x-auto md:block">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-faint">
+                            <th className="py-2 pr-3">Submission</th>
+                            <th className="py-2 pr-3">Raw avg</th>
+                            <th className="py-2 pr-3">Raw rank</th>
+                            <th className="py-2 pr-3">Normalized score</th>
+                            <th className="py-2 pr-3">Normalized rank</th>
+                            <th className="py-2 pr-3">Movement</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detail.normalizedScores.map((row) => (
                             <tr key={row.id} className="border-b border-line last:border-0">
                               <td className="py-2 pr-3 text-ink">{row.submission.title || 'Untitled submission'}</td>
                               <td className="py-2 pr-3 font-mono text-ink-muted">
@@ -218,23 +231,29 @@ export default function NormalizationPage() {
                               <td className="py-2 pr-3 font-mono text-ink-muted">{row.rawRank ?? '—'}</td>
                               <td className="py-2 pr-3 font-mono text-ink-muted">{row.finalScore.toFixed(1)}</td>
                               <td className="py-2 pr-3 font-mono text-ink-muted">{row.rank}</td>
-                              <td className="py-2 pr-3">
-                                {movement === null ? (
-                                  '—'
-                                ) : movement === 0 ? (
-                                  <span className="text-ink-faint">No change</span>
-                                ) : movement > 0 ? (
-                                  <span className="text-success">↑ {movement}</span>
-                                ) : (
-                                  <span className="text-danger">↓ {Math.abs(movement)}</span>
-                                )}
-                              </td>
+                              <td className="py-2 pr-3"><MovementIndicator row={row} /></td>
                             </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-col gap-3 md:hidden">
+                      {detail.normalizedScores.map((row) => (
+                        <div key={row.id} className="flex flex-col gap-1 border-b border-line pb-3 last:border-0 last:pb-0">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm text-ink">{row.submission.title || 'Untitled submission'}</p>
+                            <MovementIndicator row={row} />
+                          </div>
+                          <p className="font-mono text-xs text-ink-muted">
+                            raw {row.averageRawTotal !== null ? row.averageRawTotal.toFixed(1) : '—'} (#{row.rawRank ?? '—'})
+                            {' → '}
+                            normalized {row.finalScore.toFixed(1)} (#{row.rank})
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
               </Card>
 
