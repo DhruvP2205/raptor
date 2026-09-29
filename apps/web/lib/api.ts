@@ -6,6 +6,7 @@ import type {
   JudgeInvitation,
   JudgeProgress,
   MyAssignmentRow,
+  OrganizerAuditLogPage,
   PublicEvent,
   PublicEventMembership,
   PublicUser,
@@ -473,6 +474,20 @@ export function listMyAssignments(eventId: string) {
 
 export function assignmentProgress(eventId: string) {
   return apiFetch<JudgeProgress[]>(`/events/${eventId}/assignments/progress`);
+}
+
+// Module 24 (Release Closeout, B1) — organizer-facing audit-log page.
+export function getOrganizerAuditLog(
+  eventId: string,
+  filters?: { from?: string; to?: string; action?: string; cursor?: string },
+) {
+  const params = new URLSearchParams();
+  if (filters?.from) params.set('from', filters.from);
+  if (filters?.to) params.set('to', filters.to);
+  if (filters?.action) params.set('action', filters.action);
+  if (filters?.cursor) params.set('cursor', filters.cursor);
+  const qs = params.toString();
+  return apiFetch<OrganizerAuditLogPage>(`/events/${eventId}/audit-log${qs ? `?${qs}` : ''}`);
 }
 
 export function manualAssign(eventId: string, submissionId: string, judgeIds: string[]) {

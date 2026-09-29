@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { LoginRateLimitGuard } from './guards/login-rate-limit.guard';
 import { MustResetPasswordGuard } from './guards/must-reset-password.guard';
 import { SessionAuthGuard } from './guards/session-auth.guard';
 import { SessionService } from './session.service';
@@ -11,6 +12,7 @@ import { SessionService } from './session.service';
   providers: [
     AuthService,
     SessionService,
+    LoginRateLimitGuard,
     // Order matters: Nest runs global guards in registration order.
     // SessionAuthGuard must populate req.user before
     // MustResetPasswordGuard can read it.

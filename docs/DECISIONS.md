@@ -2550,3 +2550,129 @@ Both `stages/23-bonus-challenges.md` (status line, Section 3.2, Section
 Normalization Proof now shown as `Claimed` alongside Threat Model; API
 First and Pairwise Mode explicitly labeled as a deliberate stop, not an
 open gap.
+
+---
+
+## Module 24 (Release Closeout) — Group A/B items built and verified
+
+**D185 — Built the Group A/B closeout checklist from
+`stages/24-closeout.md`, with two items explicitly skipped and one
+item's decision already covered by D184:**
+
+- **A1, A2, A3** — already done (D181, D182). Re-verified as part of
+  this module's own full test/acceptance re-run below.
+- **A4 (rate limits).** Added `LoginRateLimitGuard` (keyed by source IP
+  + normalized email, 10/15min default, generic 429 — never confirms
+  whether an email is registered) on `POST /auth/login`, and
+  `GalleryRateLimitGuard` (per-IP, 120/min default) on the public
+  gallery list and submission-detail routes. Both reuse the existing
+  `RateLimitService` (fail-open on a Redis outage, same posture as
+  every other limiter in this codebase) — no new rate-limit mechanism
+  invented. Both configurable by environment variable; neither can
+  affect the acceptance checker, whose entire run is a handful of
+  requests total.
+- **A5 (fixture-import switch).** `FIXTURES_IMPORT`, default `true`.
+  `false` skips `seed.ts` entirely — before any file read or database
+  connection — so a real deployment carries no fixture event and no
+  seeded checker credentials (THREAT-MODEL.md 5.7, now closed rather
+  than just documented). Confirmed live and by reading
+  `docker-entrypoint.sh`: independent of `DEMO_MODE` — `seed.js`
+  (fixtures) and `seed-demo.js` (demo events) are two separate boot
+  steps, so `FIXTURES_IMPORT=false` with `DEMO_MODE=true` still seeds
+  the four demo events normally.
+- **A6 (cookie attributes).** `secure` is now `COOKIE_SECURE === 'true'`,
+  an explicit setting rather than inferred from `NODE_ENV` — a
+  production deployment without TLS yet configured shouldn't have this
+  silently flip on just because `NODE_ENV=production` (it would break
+  login: browsers refuse to send a `Secure` cookie back over plain
+  HTTP). `httpOnly`/`sameSite: 'lax'` were already correct (D182).
+  Confirmed by reading every `@Get` route in the codebase (~50 of them):
+  none perform a mutation.
+- **A7 (gallery search/filter).** Added optional `q` (case-insensitive
+  title/description match) and `trackId` params to
+  `GET /events/:eventId/submissions`. With neither supplied, the where
+  clause is unchanged from before — confirmed live: still returns all
+  40 fixture submissions, since `.dogfood.toml`'s `gallery` check reads
+  this exact route's raw body for a fixture title.
+- **A8 (Docker cold start).** Not performed — this sandbox has no
+  Docker (same limitation noted in `apps/api/Dockerfile`'s own header
+  comment and every prior Module 19/20 entry). Left honestly untested
+  in this environment rather than assumed passing.
+- **A9 (base URL/port).** Re-checked — already consistent (D182);
+  README/`API.md`/`.dogfood.toml` all agree on `http://localhost:4000`.
+  No change needed.
+- **B1 (organizer audit-log viewer).** Added a nullable, indexed
+  `eventId` column to `AuditLog` (migration
+  `20260928172433_audit_log_event_id`). `AuditService.record` now
+  extracts `eventId` from the metadata object automatically
+  (`extractEventId`, exported so the backfill script reuses the exact
+  same rule) — confirmed by grep that every existing event-scoped call
+  site already puts `eventId` directly in its metadata literal, so this
+  required **zero changes to any of the ~30 existing `audit.record`
+  call sites**. `scripts/backfill-audit-log-event-id.ts` catches up
+  pre-existing rows once, idempotently (only ever touches rows where
+  `eventId IS NULL`, never guesses one where metadata carries none).
+  New route `GET /events/:eventId/audit-log`
+  (`OrganizerAuditLogController`/`Service`), organizer-or-siteAdmin via
+  the same `EventRoleGuard` every other organizer route uses — its
+  cross-event isolation is already proven by that guard's own existing
+  test suite, not re-tested per-controller. Cursor-paginated (50/page),
+  filterable by date range and action. Frontend: an "Audit log" item
+  in the organizer shell sidebar and a list page, using the same
+  Card-list pattern every other organizer-shell list already uses
+  (not a separate desktop-table/mobile-card pair — nothing in this
+  codebase works that way). **Live-verified end-to-end**: triggered a
+  real `VOTING_ELIGIBILITY_MODE_SET` action as organizer, confirmed it
+  appeared in the new route immediately with the correct actor/action,
+  with `eventId` populated automatically and no manual backfill needed
+  for a fresh write.
+- **B2 (ballot order).** Checked `stages/11-voting.md` directly — no
+  mention of randomized ballot order anywhere in the spec. Per the
+  closeout doc's own fallback ("if not required, record the decision
+  and skip"): **not required, skipped.** No code change.
+- **B3 (OpenAPI).** Explicitly skipped — this is the API First bonus
+  the project owner already decided not to build (D184). Flagged back
+  to the user directly before touching anything, given it visibly
+  contradicted a decision made two turns earlier; user confirmed
+  keeping D184 standing.
+- **C1–C4, C7** — already done as part of D182/D183 (real fixture path
+  in `NORMALIZATION.md`, `JUDGING.md` Section 5.4 pointer,
+  `scripts/requirements.txt`). This entry is C4's own log for A4–A9/B1/B2.
+- **C2 (README).** Added a "Production hardening" table (the four new
+  A4–A6 settings, defaults, and what to change for production) and
+  extended the audit-log line in "What's included."
+- **C5 (THREAT-MODEL.md).** Items 4, 7, 8, 9 in Section 5 rewritten —
+  each previously said a mitigation did not exist (true when D182
+  wrote it); now each states the real fix that now exists (A4/A5/A6
+  above) plus the honest residual risk that remains even with it (a
+  generous rate limit slows but doesn't stop a determined attacker
+  rotating IPs; `FIXTURES_IMPORT` still defaults to `true`; a login
+  rate limit resets after its window rather than permanently locking
+  an account). Never left describing a gap that a few edits earlier in
+  this same session had already closed.
+- **C6.** No bonus status changed by this module's work — Threat
+  Model's `Claimed` status already accounted for exactly this kind of
+  future code change (its bar is "every control checked against the
+  code," which C5 keeps satisfied by keeping the document in sync, not
+  by freezing the code).
+- **C8 (licence).** Not touched — user explicitly kept Apache-2.0
+  (already the project's licence throughout; `stages/24-closeout.md`'s
+  own "MIT" instruction was flagged back rather than followed, given a
+  licence-type change is a real legal decision, not a housekeeping
+  edit a document should silently make).
+- **C9.** Full test suite re-run after all of the above: 500/500
+  passing (up from 470 — 30 new tests across `seed.spec.ts`,
+  `login-rate-limit.guard.spec.ts`, `gallery-rate-limit.guard.spec.ts`,
+  `audit.service.spec.ts`, `backfill-audit-log-event-id.spec.ts`,
+  `organizer-audit-log.service.spec.ts`, and the new
+  `listSubmittedForEvent` filter tests). `apps/web` typechecks clean.
+  `apps/api` builds clean. The real `run.py` re-run after all code
+  changes — see the acceptance-report update below.
+- **C10 (stray-file cleanup).** Attempted — blocked by the safety
+  classifier (pre-existing files not explicitly named by the user this
+  turn, even though this document instructs it). Left in place,
+  flagged back to the user directly rather than worked around.
+
+**Not done, by explicit user instruction, overriding this document
+where they conflict:** B3 (OpenAPI/API First) and C8 (MIT licence
+switch). Both flagged back before being skipped, not silently ignored.

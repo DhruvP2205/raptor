@@ -31,3 +31,6 @@ apps/api/uploads/
 # only its hash), so it has to exist somewhere for a re-run to reprint
 # the same value, but it's never committed.
 apps/api/.fixture-auth-headers.txt
+
+# TypeScript incremental build cache
+*.tsbuildinfo

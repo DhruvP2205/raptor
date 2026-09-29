@@ -272,6 +272,7 @@ export class SubmissionsService {
   async listSubmittedForEvent(
     eventId: string,
     caller: { id: string; siteAdmin: boolean } | null,
+    filters?: { q?: string; trackId?: string },
   ) {
     const event = await this.getEventOrThrow(eventId);
     if (event.status !== 'PUBLISHED') {
@@ -288,8 +289,25 @@ export class SubmissionsService {
       }
     }
 
+    // Module 24 (Release Closeout, A7) — both optional; with neither
+    // supplied this must remain the exact same full, unpaginated list
+    // as before (the acceptance checker reads this raw body for a
+    // fixture project title, per .dogfood.toml's `gallery` route).
+    const q = filters?.q?.trim();
     const submissions = await this.prisma.submission.findMany({
-      where: { eventId, isDraft: false },
+      where: {
+        eventId,
+        isDraft: false,
+        ...(filters?.trackId ? { trackIds: { has: filters.trackId } } : {}),
+        ...(q
+          ? {
+              OR: [
+                { title: { contains: q, mode: 'insensitive' } },
+                { description: { contains: q, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+      },
       orderBy: { submittedAt: 'asc' },
       include: { team: { select: { name: true } }, soloUser: { select: { displayName: true } } },
     });

@@ -34,6 +34,7 @@ function sidebarItems(slug: string) {
     { href: `/events/${slug}/manage/results`, label: 'Results' },
     { href: `/events/${slug}/manage/voting`, label: 'Voting' },
     { href: `/events/${slug}/manage/certificates`, label: 'Certificates' },
+    { href: `/events/${slug}/manage/audit-log`, label: 'Audit log' },
   ];
 }
 

@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { type User } from '@prisma/client';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { OptionalAuth } from '../auth/decorators/optional-auth.decorator';
 import { RequireSiteAdmin } from '../authz/decorators/require-site-admin.decorator';
 import { SiteAdminGuard } from '../authz/guards/site-admin.guard';
 import { UpdateSubmissionDto } from './dto/update-submission.dto';
+import { GalleryRateLimitGuard } from './guards/gallery-rate-limit.guard';
 import { SubmissionsService } from './submissions.service';
 
 @Controller()
@@ -39,10 +40,17 @@ export class SubmissionsController {
   // do, so this doesn't change their existing view.
   @Get('events/:eventId/submissions')
   @OptionalAuth()
-  listSubmitted(@Param('eventId') eventId: string, @CurrentUser() user?: User) {
+  @UseGuards(GalleryRateLimitGuard)
+  listSubmitted(
+    @Param('eventId') eventId: string,
+    @CurrentUser() user?: User,
+    @Query('q') q?: string,
+    @Query('trackId') trackId?: string,
+  ) {
     return this.submissions.listSubmittedForEvent(
       eventId,
       user ? { id: user.id, siteAdmin: user.siteAdmin } : null,
+      { q, trackId },
     );
   }
 
@@ -62,6 +70,7 @@ export class SubmissionsController {
   // before, an anonymous caller included.
   @Get('submissions/:id')
   @OptionalAuth()
+  @UseGuards(GalleryRateLimitGuard)
   getById(@Param('id') id: string, @CurrentUser() user?: User) {
     return this.submissions.getById(id, user ?? null);
   }

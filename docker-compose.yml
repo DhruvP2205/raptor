@@ -99,6 +99,17 @@ services:
       # warning) — set via `DEMO_MODE=true docker compose up` or a
       # `.env` file, never hardcoded true here.
       DEMO_MODE: ${DEMO_MODE:-false}
+      # Module 24 (Release Closeout, A5) — production hardening. Default
+      # true (the acceptance checker needs the seeded data present with
+      # zero manual steps); set FIXTURES_IMPORT=false for a real
+      # deployment that shouldn't carry the fixture organizer's live
+      # credentials (THREAT-MODEL.md 5.7). Independent of DEMO_MODE:
+      # confirmed via docker-entrypoint.sh's own boot order — seed.js
+      # (fixtures) and seed-demo.js (demo events) are two separate
+      # steps, so FIXTURES_IMPORT=false with DEMO_MODE=true still seeds
+      # the four demo events normally, just without the real fixture
+      # event or its seeded checker sessions.
+      FIXTURES_IMPORT: ${FIXTURES_IMPORT:-true}
       # TEST_MODE is intentionally absent here — absence = false.
       # Never set it in this file. See
       # docs/stages/01-auth-and-email-setup.md Section 5.5.

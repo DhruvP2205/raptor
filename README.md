@@ -209,6 +209,21 @@ path). The one flag worth knowing about explicitly:
 > the codebase. **Never enable this in a real production deployment** —
 > see `docs/stages/01-auth-and-email-setup.md` Section 5.
 
+### 🔒 Production hardening
+
+A few settings default to values convenient for the acceptance checker
+and local evaluation, and are meant to be tightened for a real,
+public-facing deployment:
+
+| Setting | Default | For production |
+|---|---|---|
+| `FIXTURES_IMPORT` | `true` | Set `false` once you don't need the checker's seeded fixture event/credentials — see [`THREAT-MODEL.md`](THREAT-MODEL.md) limit 5.7 |
+| `COOKIE_SECURE` | off | Set `true` once TLS actually terminates in front of the API — turning it on without real TLS breaks login, since browsers won't send a `Secure` cookie back over plain HTTP |
+| `LOGIN_RATE_LIMIT_ATTEMPTS` / `LOGIN_RATE_LIMIT_WINDOW_MINUTES` | `10` / `15` | Tune to taste — generic 429, never reveals whether an email is registered |
+| `GALLERY_RATE_LIMIT_PER_MINUTE` | `120` | Generous by default so it never affects real users or the acceptance checker; lower it if you see scraping |
+
+Full detail on each: `apps/api/.env.example`.
+
 ---
 
 ## 🎭 Demo environment
@@ -421,7 +436,7 @@ with those, never the reverse.
 | 📜 **Certificates** | Cryptographically signed (Ed25519) participation/winner certificates, verifiable independently, public certificate gallery |
 | 💬 **Comments** | Sanitized, threaded discussion on public submissions |
 | 🌍 **Global leaderboard** | Platform-wide ranking across every event a person has competed in, with its own tie-break rules and a per-person history drill-down |
-| 🖥️ **Organizer dashboard** | One unified admin shell tying together event setup, verification, assignment, scoring oversight, results publishing, and CSV export |
+| 🖥️ **Organizer dashboard** | One unified admin shell tying together event setup, verification, assignment, scoring oversight, results publishing, CSV export, and a per-event audit-log viewer |
 | 🎭 **Demo mode** | One flag spins up a fully isolated sandbox database with four sample events spanning the whole lifecycle — see [Demo environment](#-demo-environment) |
 
 ---

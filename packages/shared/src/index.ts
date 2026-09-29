@@ -362,6 +362,20 @@ export interface JudgeProgress {
   pending: number;
 }
 
+// Module 24 (Release Closeout, B1) — GET /events/:eventId/audit-log,
+// organizer-facing (or siteAdmin, audited), cursor-paginated.
+export interface OrganizerAuditLogEntry {
+  id: string;
+  createdAt: string;
+  actor: string;
+  action: string;
+  reason: string;
+}
+export interface OrganizerAuditLogPage {
+  entries: OrganizerAuditLogEntry[];
+  nextCursor: string | null;
+}
+
 // siteAdmin's "drafts in progress" list — deliberately not `Submission`;
 // it's a narrower projection the backend query never pulls
 // title/description/links for at all (Section 6,

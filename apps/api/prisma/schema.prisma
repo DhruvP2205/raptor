@@ -325,6 +325,12 @@ model Event {
   // Module 14 — every global-ranking award-detail row ever generated
   // that credits this event (Section 7, docs/stages/14-global-ranking.md).
   globalRankingAwardDetails GlobalRankingAwardDetail[]
+
+  // Module 24 (Release Closeout, A2/B1) — audit-log rows that carry an
+  // `eventId` in their metadataJson (set automatically by
+  // AuditService.record, backfilled once for pre-existing rows) so an
+  // organizer can see their own event's trail without admin-only access.
+  auditLogEntries AuditLog[]
 }
 
 enum EventStatus {
@@ -1215,9 +1221,20 @@ model AuditLog {
   action       String
   metadataJson Json
 
+  // Module 24 (Release Closeout, B1) — nullable: only event-scoped
+  // actions set this (AuditService.record extracts it from
+  // metadataJson.eventId automatically), platform-wide actions (staff
+  // creation, user directory export, ...) leave it null on purpose,
+  // never guessed. Lets an organizer read their own event's trail
+  // (GET /events/:eventId/audit-log) without needing admin-only access
+  // to the full, unscoped log.
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id])
+
   createdAt DateTime @default(now())
 
   @@index([actorUserId])
+  @@index([eventId])
 }
 
 // Module 11 (Voting) — see docs/stages/11-voting.md Section 10. A round

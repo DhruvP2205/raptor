@@ -41,7 +41,23 @@ function authHeadersFilePath(): string {
   return join(__dirname, '../../.fixture-auth-headers.txt');
 }
 
-async function main(): Promise<number> {
+// Exported so seed.spec.ts can test the FIXTURES_IMPORT branch without
+// needing a real Postgres/file — every return-0 path above the file
+// read below happens before any I/O.
+export async function main(): Promise<number> {
+  // Module 24 (Release Closeout, A5) — production hardening: a real
+  // deployment should not carry the fixture organizer's live, seeded
+  // credentials (THREAT-MODEL.md 5.7) if it doesn't need the checker
+  // data at all. Defaults to `true` unconditionally, since the checker
+  // needs this data present on first boot with zero manual steps — an
+  // operator running against real event data opts out explicitly
+  // instead. `false` skips the entire step: no fixture event, no
+  // seeded sessions, no headers file — not a partial skip.
+  if (process.env.FIXTURES_IMPORT === 'false') {
+    console.log('[seed] FIXTURES_IMPORT=false — skipping fixture import and seeded sessions entirely.');
+    return 0;
+  }
+
   const fixturesPath = process.env.FIXTURES_PATH ?? defaultFixturesPath();
   if (!existsSync(fixturesPath)) {
     console.log(`[seed] No fixtures file at ${fixturesPath} — skipping fixtures import.`);

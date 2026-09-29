@@ -453,4 +453,60 @@ describe('SubmissionsService', () => {
       });
     });
   });
+
+  describe('listSubmittedForEvent — search & filter (Module 24, A7)', () => {
+    const PUBLISHED_EVENT = { ...FUTURE_EVENT, status: 'PUBLISHED' };
+
+    it('with no filters, returns the full unfiltered where clause — the acceptance checker relies on this', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUnique.mockResolvedValue(PUBLISHED_EVENT);
+      prisma.submission.findMany.mockResolvedValue([]);
+      const service = new SubmissionsService(prisma, makeAudit() as any, makeMarkdown() as any);
+
+      await service.listSubmittedForEvent('event-1', null);
+
+      const where = prisma.submission.findMany.mock.calls[0][0].where;
+      expect(where).toEqual({ eventId: 'event-1', isDraft: false });
+    });
+
+    it('filters by case-insensitive title/description match when q is given', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUnique.mockResolvedValue(PUBLISHED_EVENT);
+      prisma.submission.findMany.mockResolvedValue([]);
+      const service = new SubmissionsService(prisma, makeAudit() as any, makeMarkdown() as any);
+
+      await service.listSubmittedForEvent('event-1', null, { q: 'Robot' });
+
+      const where = prisma.submission.findMany.mock.calls[0][0].where;
+      expect(where.OR).toEqual([
+        { title: { contains: 'Robot', mode: 'insensitive' } },
+        { description: { contains: 'Robot', mode: 'insensitive' } },
+      ]);
+    });
+
+    it('filters by trackId when given', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUnique.mockResolvedValue(PUBLISHED_EVENT);
+      prisma.submission.findMany.mockResolvedValue([]);
+      const service = new SubmissionsService(prisma, makeAudit() as any, makeMarkdown() as any);
+
+      await service.listSubmittedForEvent('event-1', null, { trackId: 'track-9' });
+
+      const where = prisma.submission.findMany.mock.calls[0][0].where;
+      expect(where.trackIds).toEqual({ has: 'track-9' });
+    });
+
+    it('combines q and trackId together', async () => {
+      const prisma = makePrisma();
+      prisma.event.findUnique.mockResolvedValue(PUBLISHED_EVENT);
+      prisma.submission.findMany.mockResolvedValue([]);
+      const service = new SubmissionsService(prisma, makeAudit() as any, makeMarkdown() as any);
+
+      await service.listSubmittedForEvent('event-1', null, { q: 'robot', trackId: 'track-9' });
+
+      const where = prisma.submission.findMany.mock.calls[0][0].where;
+      expect(where.trackIds).toEqual({ has: 'track-9' });
+      expect(where.OR).toBeDefined();
+    });
+  });
 });

@@ -54,7 +54,15 @@ export class SessionService {
   setCookie(res: Response, rawToken: string, expiresAt: Date): void {
     res.cookie(SESSION_COOKIE_NAME, rawToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      // Module 24 (Release Closeout, A6) — an explicit setting, not
+      // inferred from NODE_ENV: a production deployment without TLS
+      // yet configured shouldn't have this silently flip on just
+      // because NODE_ENV=production, and a local operator testing a
+      // "production-like" run over plain HTTP shouldn't get a cookie
+      // the browser then refuses to send back. Off by default (safe
+      // for local runs); documented in .env.example as required
+      // production hardening once TLS terminates in front of the API.
+      secure: process.env.COOKIE_SECURE === 'true',
       sameSite: 'lax',
       expires: expiresAt,
       path: '/',

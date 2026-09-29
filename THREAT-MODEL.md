@@ -164,12 +164,14 @@ Ordered roughly by how much they matter. Each has a path to fixing it.
    under different emails would not be linked. *Fix path:* an
    organizer-declared conflict list per judge.
 4. **Bulk collection of public content.** The gallery is public by
-   design and we have not designed request-rate limits for read
-   routes. **Confirmed by reading the guards** — `submissions.controller.ts`
-   (the gallery route) carries no rate-limit guard at all; rate
-   limiting exists only on uploads, team-join, comments, and voting
-   (`upload-rate-limit.guard.ts`, `join-rate-limit.guard.ts`,
-   `comment-rate-limit.guard.ts`, `pow-captcha.service.ts`).
+   design. **Fixed (Module 24, A4):** a generous, per-IP rate limit
+   (120/minute, `GalleryRateLimitGuard`) now covers the gallery list and
+   submission-detail routes, configurable via `GALLERY_RATE_LIMIT_PER_MINUTE`
+   — alongside the existing limits on uploads, team-join, comments, and
+   voting. **Residual, honestly:** this slows a single-source scrape, it
+   does not stop a motivated attacker rotating IPs; the gallery is
+   public by design, so bulk harvesting of *public* content can only
+   ever be slowed, not fully prevented.
 5. **Repository history is evidence, not proof.** A determined person
    can make commits that look like they were made inside the window.
    Verification exists to triage; ambiguous results go to a human, and
@@ -188,18 +190,26 @@ Ordered roughly by how much they matter. Each has a path to fixing it.
    (including an organizer for the fixture event), prints them, and
    stores them in a gitignored file. Anyone who can read that file or
    the container logs holds those sessions. The blast radius is one
-   sample event, but a real deployment should not carry a live
-   organizer credential it does not need. **Confirmed: no such switch
-   exists** — `seed.ts` imports unconditionally whenever a fixtures
-   file is present at the default path or `FIXTURES_PATH`. *Fix path:*
-   an explicit switch to disable fixture import in production.
+   sample event. **Fixed (Module 24, A5):** `FIXTURES_IMPORT=false`
+   skips fixture import and seeded sessions entirely — no fixture
+   event, no credentials, no headers file. **Residual, by deliberate
+   design:** defaults to `true`, since the acceptance checker needs
+   this data present with zero manual steps; a real deployment must
+   explicitly opt out, which is a real step an operator has to
+   remember to take, not something the platform forces.
 8. **Login guessing.** Passwords are argon2-hashed, which makes each
-   guess expensive, but we have not designed per-account lockout or
-   login rate limiting, and there is no password-reset flow yet.
-   **Confirmed: `auth.controller.ts` carries no rate-limit guard on
-   login at all.**
-9. **Denial of service.** Only uploads and voting are rate-limited. A
-   flood against other routes is a resource problem we have not
+   guess expensive. **Fixed (Module 24, A4):** login now has a rate
+   limit — 10 attempts per 15 minutes per (source IP, email) pair,
+   configurable via `LOGIN_RATE_LIMIT_ATTEMPTS`/
+   `LOGIN_RATE_LIMIT_WINDOW_MINUTES`, with a fully generic 429 that
+   never confirms whether the email is registered. **Residual,
+   honestly:** the limit resets after its window rather than
+   permanently locking the account, and there is still no
+   password-reset flow.
+9. **Denial of service.** Rate limiting now covers uploads, voting,
+   team-join, comments, login, and the public gallery/submission-detail
+   routes (Module 24, A4) — but every other route is still unlimited. A
+   flood against any of those is a resource problem we have not
    addressed at the application layer; a reverse proxy is the expected
    answer.
 

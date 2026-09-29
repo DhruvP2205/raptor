@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Req, Res, UseGuards } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
@@ -10,6 +10,7 @@ import { ResendVerificationDto } from './dto/resend-verification.dto';
 import { SetPasswordDto } from './dto/set-password.dto';
 import { SignupDto } from './dto/signup.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { LoginRateLimitGuard } from './guards/login-rate-limit.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -26,6 +27,7 @@ export class AuthController {
   }
 
   @Public()
+  @UseGuards(LoginRateLimitGuard)
   @Post('login')
   login(
     @Body() dto: LoginDto,
