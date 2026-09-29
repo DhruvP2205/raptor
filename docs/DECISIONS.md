@@ -2747,3 +2747,130 @@ dev server. **Honest limitation:** no browser-automation tool is
 available in this environment, so the mobile card layout's actual
 visual appearance at narrow widths was not confirmed by eye — only
 that it renders without error.
+
+---
+
+## `docs/design/VERIFICATION.md` — the master checklist run, a real bug found and fixed
+
+**D187 — A 75-item, 8-section master verification checklist arrived,
+explicitly meant to be executed and reported back using its own
+Section 10 template. Worked through it live against a real local
+instance (no Docker in this sandbox, so Section 1 was adapted to its
+non-Docker equivalents where one exists).**
+
+**Real bug found and fixed, via Section 2's own live checks
+(2.3–2.5):** `issueOrReuseRoleSession` (`auth-header-bootstrap.ts`,
+Module 17) checked that *a* valid session existed at the
+`FixtureImportRecord`-recorded internal id, then trusted whatever raw
+token happened to be sitting in the local, gitignored
+`.fixture-auth-headers.txt` file — without ever verifying that file's
+token actually hashed to match that session's `tokenHash`. Surfaced
+directly: this session had switched `DATABASE_URL` between the real
+`raptor` database and `raptor_demo` several times (both write to the
+same file path, which has no notion of which database it was written
+against); the file ended up holding one database's tokens while
+`.dogfood.toml` held another's. `run.py` (2.1) passed because it reads
+`.dogfood.toml` directly; a manual curl using the stale file's organizer
+token got a bare `401` even though the code claimed "[reused from prior
+run]." **Fixed** — added `extractRawToken()` and now verify
+`sha256Hex(extractRawToken(previousValue)) === session.tokenHash`
+before trusting a "reuse"; a mismatch now correctly falls through to
+issuing (and persisting) a fresh session, exactly like an expired or
+missing one already did. Re-verified: re-running `seed.js` now reports
+`[freshly issued]` for a stale file (previously silently reported
+`[reused from prior run]`), and a second run correctly reports
+`[reused from prior run]` once the file is genuinely back in sync.
+`.dogfood.toml` updated to the now-tracked-correct tokens; `run.py`
+re-run clean afterward. 8 new tests in `auth-header-bootstrap.spec.ts`
+reproduce the exact failure mode directly (a live session exists, but
+the file's token belongs to a different one) rather than only testing
+the happy path. **Note for anyone re-running this suite of checks
+later:** this failure mode is specific to switching `DATABASE_URL`
+against a shared, gitignored, local-only file — a single real
+deployment never hits it, since there's only ever one database writing
+to that path.
+
+**Section 2 (acceptance checker), fully live-verified**, all 5 items,
+using the corrected tokens: `run.py`'s real 7 checks pass; `judge_scores`/
+`peer_scores` are confirmed the identical URL string; no-auth → `401`,
+wrong-judge → `403`, organizer → `200` on that exact route — the
+single check `THREAT-MODEL.md`/`API.md` call out as "the most
+consequential entry" in the whole config.
+
+**Section 3 (module guarantees), spot-checked live**: login's generic
+error on bad credentials (3.1); a nonexistent/draft event 404s rather
+than 403ing for an unrelated account (3.3); a late submit is rejected
+on server time regardless of a forged `submittedAt` in the body, with
+`SUBMISSIONS_CLOSED` specifically (3.5); normalization genuinely locks
+once `resultsAnnounceAt` passes, confirmed by moving the fixture
+event's own timestamp into the past and retrying — first attempt
+against stale (still-future, left over from an earlier session's own
+testing) timeline data misleadingly succeeded, correctly re-tested
+after fixing the timeline state (3.9); admin-tier export refused for
+the event's own organizer (3.19); all four caller types on the
+judge_scores/peer_scores route behave exactly as designed — self 200,
+wrong judge 403, organizer 200, participant 403 (3.20). No disqualified
+submission exists in the committed fixture data to test 3.6 against
+live; deferred to the existing passing `verification.service.spec.ts`
+coverage rather than disqualifying real fixture data to manufacture a
+test case.
+
+**Section 4 (security), live-tested where practical**: SQL injection
+attempt in the gallery search returns a clean empty result, never an
+error or unfiltered data (4.1, Prisma's parameterized `contains`
+query, not string concatenation); a malformed session token gets `401`
+(4.4); a fabricated, unrelated submission/judge id pair gets `404`,
+never real data (4.3); stored XSS via a comment confirmed safe — the
+API stores the raw `<script>` text as-is (expected; sanitization is a
+render-time concern, not a storage-time one) and the frontend renders
+`comment.body` through plain React JSX interpolation, not
+`dangerouslySetInnerHTML`, so React's default escaping neutralizes it
+before it ever reaches the DOM (4.2); secrets-in-git-history check
+clean — only `.example` placeholder values appear anywhere in
+`secrets/`'s history (4.11); rate limiting confirmed fail-open under
+this sandbox's actual unreachable Redis — every login attempt still
+completed (no hangs, no 500s), just with added latency from ioredis's
+retry/backoff cycle, consistent with `RateLimitService`'s documented
+fail-open design — but the real `429`-triggering threshold itself
+could not be exercised without a reachable Redis (4.7/4.8, honestly
+left partial). **`pnpm audit` (4.10) found real, current
+vulnerabilities worth surfacing directly: 69 total (2 critical, 24
+high, 35 moderate, 8 low), most significantly two critical,
+unauthenticated RCE advisories in `next@14.2.35`
+(GHSA-p293-qw3h-jr36, GHSA-2xp9-vwfh-vxw4), fixed in 15.5.24+.** Not
+acted on in this pass — a Next.js 14→15 major-version upgrade is a
+real, separately-scoped undertaking (breaking-change risk across every
+one of the ~30 frontend pages), not something to fold into a
+verification pass silently. Flagged directly rather than either
+ignored or rushed.
+
+**Section 6 (frontend), 31 of 34 real routes checked live** (the
+site map's own "illustrative" paths mapped to this app's actual
+routes): every one returns `200`, no blank screen or crash (6.1).
+`certificates/:id` and `users/:id` skipped — no real certificate or
+user id was on hand without generating one. Browser-only items (6.3
+console errors, 6.4 reduced motion, 6.5 keyboard nav, 6.6 Lighthouse)
+honestly left **not checked** — no browser automation available in
+this sandbox, consistent with D186's same limitation.
+
+**Section 5 (API contract) and 7.3 (bonus)**: `5.2`/`5.3` and the
+API-First portion of `7.3` correctly come back **not yet
+implemented** — no OpenAPI generation exists (D182, D184's deliberate
+stop-at-two-bonuses decision). Per this checklist's own Section 9 ("it
+is fine, and expected, for some Section 4/5 items to come back 'not
+yet implemented' rather than pass/fail"), stated plainly rather than
+worked around.
+
+**Section 8 (deliverables)**: `LICENSE` real and present (8.1);
+`acceptance-report.txt` committed and matches the real, just-re-run
+transcript byte-for-byte (8.3); every link in `README.md`'s docs map
+resolves to a real path (8.4). 8.2 (demo video) not applicable to this
+repository/session.
+
+**Not run**: the full Section 1 Docker suite (no Docker in this
+sandbox — same limitation recorded throughout this project's own
+history), 4.5/4.6 (upload/SVG spoofing — needs real file uploads, not
+attempted this pass), 4.12 (needed a siteAdmin session not on hand;
+deferred to the existing passing `github-tokens.service.spec.ts`
+coverage), 5.1 (spot-checking UI-to-API equivalence — deferred given
+time already spent on the items above).

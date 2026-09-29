@@ -56,10 +56,10 @@ csv_export   = "/events/81dd9c8a-494b-4ad2-a861-58742d4e8f9b/export/submissions.
 # placeholders) because a real run.py execution needs them to actually
 # connect — these are fixture/seed-only session rows tied to a
 # throwaway local dev database, not production credentials.
-organizer   = "Cookie: raptor_session=3206a2881a7c9ff54613a63fb344b19954dad1bde8762c5d9892c41dab99ea8b"
-judge_a     = "Cookie: raptor_session=4aa3f9e4b2c90d967dae2b44d0451e3b71e463cf7a18bb15bf55d07970b7d90e"
-judge_b     = "Cookie: raptor_session=aca8030becf1d36e2de1c31d87a40411b2b6e4c01a129e59551f881b4a75eb64"
-participant = "Cookie: raptor_session=9a3b85c4f49151d483a8c9fdf75a2ead2eaf448b8221bbb4ec936f591de6c25b"
+organizer   = "Cookie: raptor_session=1f10a015dadf34da5ac3b4a5836e5b100ee9230a825e40aca1f6a29ecf8dd32d"
+judge_a     = "Cookie: raptor_session=42eb1e1a1ff8eb8a8f1adc5c7cfd9b1138de58619822e1be93a4979b2ae688aa"
+judge_b     = "Cookie: raptor_session=8743f1cf7e3fe7487472340c317545904552040b2733d4c6a75bc0ba30009038"
+participant = "Cookie: raptor_session=11d300c77b2c89beb5866d81e60da2639db0d181acabae9e8cebc27ba9821182"
 
 [tiers]
 # `claimed` is the only key run.py itself reads — a list of "T1"/"T2"/

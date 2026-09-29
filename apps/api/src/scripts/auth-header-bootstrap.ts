@@ -26,6 +26,19 @@ export function formatHeaderValue(rawToken: string): string {
   return `Cookie: ${SESSION_COOKIE_NAME}=${rawToken}`;
 }
 
+// Inverse of formatHeaderValue. Returns null for anything that isn't a
+// well-formed `Cookie: raptor_session=...` line — used to defend
+// against exactly the failure this function exists to catch (see
+// issueOrReuseRoleSession below): a well-formed-looking but *wrong*
+// token sitting in the local file (e.g. left over from a different
+// database's own seed run, since the file path is DB-agnostic).
+export function extractRawToken(headerValue: string): string | null {
+  const prefix = `Cookie: ${SESSION_COOKIE_NAME}=`;
+  if (!headerValue.startsWith(prefix)) return null;
+  const token = headerValue.slice(prefix.length).trim();
+  return token.length > 0 ? token : null;
+}
+
 // Section 4 — a raw '#' would be silently truncated by the checker's
 // pre-3.11 Python fallback TOML parser (treated as a comment start).
 // generateRawToken()/sha256Hex() are both hex-alphabet by construction
@@ -84,11 +97,22 @@ export async function issueOrReuseRoleSession(
     const session = await prisma.session.findUnique({ where: { id: record.internalId } });
     const previousValue = previousHeaders[role];
     const stillValid = !!session && session.expiresAt.getTime() > Date.now();
-    if (stillValid && previousValue) {
+    // Real bug, found via live testing: a valid session existing at the
+    // recorded internal id is not enough — the file's own token must
+    // also actually BE that session's token. Without this check, a file
+    // left over from a different database (same path, different
+    // DATABASE_URL — the file has no notion of which database it was
+    // written against) can report a well-formed but non-authenticating
+    // token as "reused" with no error, since Session only ever stores a
+    // hash and never the raw value to compare directly.
+    const rawToken = previousValue ? extractRawToken(previousValue) : null;
+    const tokenMatches = stillValid && !!rawToken && sha256Hex(rawToken) === session!.tokenHash;
+    if (tokenMatches && previousValue) {
       return { role, headerValue: previousValue, reused: true };
     }
-    // Session gone/expired, or the file didn't have this role's line
-    // (e.g. deleted by hand) — fall through and issue a fresh one.
+    // Session gone/expired, the file didn't have this role's line (e.g.
+    // deleted by hand), or the file's token doesn't match this
+    // database's actual session — fall through and issue a fresh one.
   }
 
   const rawToken = generateRawToken();

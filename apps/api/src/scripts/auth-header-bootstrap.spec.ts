@@ -1,11 +1,20 @@
 import {
   assertNoHashCharacter,
+  extractRawToken,
   formatAuthHeadersFile,
   formatHeaderValue,
+  issueOrReuseRoleSession,
   parseAuthHeadersFile,
   AuthHeaderRole,
 } from './auth-header-bootstrap';
-import { generateRawToken } from '../common/crypto.util';
+import { generateRawToken, sha256Hex } from '../common/crypto.util';
+
+function makePrisma() {
+  return {
+    fixtureImportRecord: { findUnique: jest.fn(), upsert: jest.fn() },
+    session: { findUnique: jest.fn(), create: jest.fn() },
+  };
+}
 
 describe('formatHeaderValue', () => {
   it('produces a complete header line, not a bare token — Section 2', () => {
@@ -62,5 +71,105 @@ describe('assertNoHashCharacter', () => {
       expect(token).toMatch(/^[0-9a-f]+$/);
       expect(() => assertNoHashCharacter(formatHeaderValue(token))).not.toThrow();
     }
+  });
+});
+
+describe('extractRawToken', () => {
+  it('recovers the raw token from a well-formed header line', () => {
+    expect(extractRawToken('Cookie: raptor_session=abc123')).toBe('abc123');
+  });
+
+  it('returns null for anything not matching the expected prefix', () => {
+    expect(extractRawToken('abc123')).toBeNull();
+    expect(extractRawToken('Cookie: other_cookie=abc123')).toBeNull();
+    expect(extractRawToken('')).toBeNull();
+  });
+
+  it('returns null for a well-formed prefix with no token', () => {
+    expect(extractRawToken('Cookie: raptor_session=')).toBeNull();
+  });
+});
+
+describe('issueOrReuseRoleSession — reuse must verify the actual token, not just session existence', () => {
+  const FUTURE = new Date(Date.now() + 86_400_000);
+
+  it('reuses the file value only when it actually hashes to the live session\'s tokenHash', async () => {
+    const prisma = makePrisma();
+    const rawToken = 'the-real-current-token';
+    prisma.fixtureImportRecord.findUnique.mockResolvedValue({ internalId: 'session-1' });
+    prisma.session.findUnique.mockResolvedValue({ id: 'session-1', tokenHash: sha256Hex(rawToken), expiresAt: FUTURE });
+
+    const result = await issueOrReuseRoleSession(prisma as any, 'organizer', 'user-1', {
+      organizer: formatHeaderValue(rawToken),
+    });
+
+    expect(result).toEqual({ role: 'organizer', headerValue: formatHeaderValue(rawToken), reused: true });
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+
+  // The real bug, reproduced directly: a valid session exists at the
+  // recorded internal id, but the file's token belongs to a DIFFERENT
+  // session (e.g. left over from another database sharing the same
+  // file path) — must NOT be reported as reused.
+  it('issues a fresh session when the file\'s token does not match the live session, even though a valid session exists', async () => {
+    const prisma = makePrisma();
+    prisma.fixtureImportRecord.findUnique.mockResolvedValue({ internalId: 'session-1' });
+    prisma.session.findUnique.mockResolvedValue({
+      id: 'session-1',
+      tokenHash: sha256Hex('the-real-current-token'),
+      expiresAt: FUTURE,
+    });
+    prisma.session.create.mockResolvedValue({ id: 'session-2' });
+
+    const result = await issueOrReuseRoleSession(prisma as any, 'organizer', 'user-1', {
+      organizer: formatHeaderValue('a-stale-token-from-a-different-database'),
+    });
+
+    expect(result.reused).toBe(false);
+    expect(prisma.session.create).toHaveBeenCalled();
+  });
+
+  it('issues a fresh session when no FixtureImportRecord exists yet', async () => {
+    const prisma = makePrisma();
+    prisma.fixtureImportRecord.findUnique.mockResolvedValue(null);
+    prisma.session.create.mockResolvedValue({ id: 'session-1' });
+
+    const result = await issueOrReuseRoleSession(prisma as any, 'organizer', 'user-1', {});
+
+    expect(result.reused).toBe(false);
+    expect(prisma.session.create).toHaveBeenCalled();
+  });
+
+  it('issues a fresh session when the recorded session has expired', async () => {
+    const prisma = makePrisma();
+    const rawToken = 'an-expired-token';
+    prisma.fixtureImportRecord.findUnique.mockResolvedValue({ internalId: 'session-1' });
+    prisma.session.findUnique.mockResolvedValue({
+      id: 'session-1',
+      tokenHash: sha256Hex(rawToken),
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    prisma.session.create.mockResolvedValue({ id: 'session-2' });
+
+    const result = await issueOrReuseRoleSession(prisma as any, 'organizer', 'user-1', {
+      organizer: formatHeaderValue(rawToken),
+    });
+
+    expect(result.reused).toBe(false);
+  });
+
+  it('issues a fresh session when the file has no line for this role at all', async () => {
+    const prisma = makePrisma();
+    prisma.fixtureImportRecord.findUnique.mockResolvedValue({ internalId: 'session-1' });
+    prisma.session.findUnique.mockResolvedValue({
+      id: 'session-1',
+      tokenHash: sha256Hex('whatever-the-current-token-is'),
+      expiresAt: FUTURE,
+    });
+    prisma.session.create.mockResolvedValue({ id: 'session-2' });
+
+    const result = await issueOrReuseRoleSession(prisma as any, 'organizer', 'user-1', {});
+
+    expect(result.reused).toBe(false);
   });
 });
